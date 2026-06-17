@@ -1,0 +1,36 @@
+{
+	"schemaVersion": 1,
+	"id": "smart-copper-golem",
+	"version": "${version}",
+	"name": "Smart Copper Golem",
+	"description": "A mod to convert copper golem into smart copper golem!",
+	"authors": [
+		"GameMech007!"
+	],
+	"contact": {
+		"homepage": "https://modrinth.com/mod/smart-copper-golems",
+		"sources": "https://github.com/gamemech007/smart-copper-golems",
+		"issues": "https://github.com/gamemech007/smart-copper-golems/issues"
+	},
+	"license": "Apache-2.0",
+	"icon": "assets/smart-golem/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.anantaya.smartcgolem.SmartCopperGolem"
+		]
+	},
+	"mixins": [
+		"smart-copper-golem.mixins.json",
+		{
+			"config": "smart-copper-golem.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
