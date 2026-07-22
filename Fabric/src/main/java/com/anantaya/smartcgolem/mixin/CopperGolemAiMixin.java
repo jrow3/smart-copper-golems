@@ -15,7 +15,7 @@ public class CopperGolemAiMixin {
     @Overwrite
     public static List<ActivityData<CopperGolem>> getActivities() {
 
-        System.out.println("SMART GOLEM MIXIN ACTIVE");
+        com.anantaya.smartcgolem.config.GolemConfig.debugLog("SMART GOLEM MIXIN ACTIVE");
 
         return SmartCopperGolemAi.getActivities();
     }

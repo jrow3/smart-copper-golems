@@ -1,5 +1,6 @@
 package com.anantaya.smartcgolem.ai;
 
+import com.anantaya.smartcgolem.config.GolemConfig;
 import com.google.common.collect.ImmutableMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ColorParticleOption;
@@ -119,7 +120,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             returnToSourceChest = null;
         }
 
-        System.out.println("[SMART-GOLEM START] carrying=" + carrying
+        GolemConfig.debugLog("[SMART-GOLEM START] carrying=" + carrying
                 + " returnToSourceChest=" + returnToSourceChest
                 + " lastPickupChest=" + lastPickupChest);
     }
@@ -143,7 +144,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             Long lockedAt = LOCKED_CHESTS_TIMESTAMP.get(pos);
 
             if (lockedAt != null && gameTime - lockedAt > LOCK_STALE_TICKS) {
-                System.out.println("[SMART-GOLEM CHEST-LOCK-STALE] clearing stale lock=" + pos);
+                GolemConfig.debugLog("[SMART-GOLEM CHEST-LOCK-STALE] clearing stale lock=" + pos);
                 LOCKED_CHESTS.remove(pos);
                 LOCKED_CHESTS_TIMESTAMP.remove(pos);
                 return true;
@@ -171,7 +172,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 Long lockedAt = LOCKED_CHESTS_TIMESTAMP.get(pos);
 
                 if (lockedAt != null && gameTime - lockedAt > LOCK_STALE_TICKS) {
-                    System.out.println("[SMART-GOLEM CHEST-LOCK-STALE] reclaiming stale lock=" + pos);
+                    GolemConfig.debugLog("[SMART-GOLEM CHEST-LOCK-STALE] reclaiming stale lock=" + pos);
                 } else {
                     return true;
                 }
@@ -181,7 +182,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             LOCKED_CHESTS_TIMESTAMP.put(pos, gameTime);
             lockedChest = pos;
 
-            System.out.println("[SMART-GOLEM CHEST-LOCK] locked=" + pos);
+            GolemConfig.debugLog("[SMART-GOLEM CHEST-LOCK] locked=" + pos);
             return false;
         }
     }
@@ -194,7 +195,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         synchronized (LOCKED_CHESTS) {
             LOCKED_CHESTS.remove(lockedChest);
             LOCKED_CHESTS_TIMESTAMP.remove(lockedChest);
-            System.out.println("[SMART-GOLEM CHEST-UNLOCK] unlocked=" + lockedChest);
+            GolemConfig.debugLog("[SMART-GOLEM CHEST-UNLOCK] unlocked=" + lockedChest);
         }
 
         lockedChest = null;
@@ -204,7 +205,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
         if (needsChestLock(newState)) {
             if (tryLockChest(target, gameTime)) {
-                System.out.println("[SMART-GOLEM CHEST-LOCK-FAILED] target busy=" + target);
+                GolemConfig.debugLog("[SMART-GOLEM CHEST-LOCK-FAILED] target busy=" + target);
 
                 if (newState == TaskState.INTERACT_SOURCE) {
                     this.taskState = TaskState.WAIT_FOR_SOURCE;
@@ -242,7 +243,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             markDestinationSelection(false, true);
         }
 
-        System.out.println("[SMART-GOLEM STATE] -> " + newState
+        GolemConfig.debugLog("[SMART-GOLEM STATE] -> " + newState
                 + " chestTarget=" + target
                 + " walkTarget=" + currentWalkTarget);
     }
@@ -329,7 +330,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                         copperGolem.setState(CopperGolemState.IDLE);
                     }
 
-                    System.out.println("[SMART-GOLEM RETURNED-TO-SOURCE] source=" + currentTarget);
+                    GolemConfig.debugLog("[SMART-GOLEM RETURNED-TO-SOURCE] source=" + currentTarget);
 
                     returnToSourceChest = null;
                     lastPickupChest = null;
@@ -354,7 +355,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         BehaviorUtils.setWalkAndLookTargetMemories(
                 mob,
                 currentWalkTarget,
-                speedModifier,
+                GolemConfig.get().haulSpeed,
                 0
         );
     }
@@ -396,7 +397,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         }
 
         if (bestCost == Double.MAX_VALUE) {
-            System.out.println("[SMART-GOLEM PATH-SKIP] Cannot path near " + chestPos);
+            GolemConfig.debugLog("[SMART-GOLEM PATH-SKIP] Cannot path near " + chestPos);
         }
 
         return bestCost;
@@ -443,7 +444,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         BlockEntity blockEntity = level.getBlockEntity(currentTarget);
 
         if (!(blockEntity instanceof ChestBlockEntity chest)) {
-            System.out.println("[SMART-GOLEM ERROR] Source target is not ChestBlockEntity at " + currentTarget);
+            GolemConfig.debugLog("[SMART-GOLEM ERROR] Source target is not ChestBlockEntity at " + currentTarget);
             closeOpenedContainer();
             switchState(mob, TaskState.IDLE, null, gameTime);
             return;
@@ -471,13 +472,13 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 openedContainer = chest;
                 openedCopperGolem = copperGolem;
 
-                System.out.println("[SMART-GOLEM VANILLA-OPEN] source=" + currentTarget);
+                GolemConfig.debugLog("[SMART-GOLEM VANILLA-OPEN] source=" + currentTarget);
             }
 
             return;
         }
 
-        if (ticksAtTarget < 9) {
+        if (ticksAtTarget < GolemConfig.get().interactionOpenTicks) {
             return;
         }
 
@@ -505,7 +506,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             actionDone = true;
         }
 
-        if (ticksAtTarget >= 60) {
+        if (ticksAtTarget >= GolemConfig.get().interactionCloseTicks) {
 
             closeOpenedContainer();
 
@@ -518,7 +519,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 if (bestDestination != null) {
                     switchState(mob, TaskState.WALK_TO_DESTINATION, bestDestination, gameTime);
                 } else {
-                    System.out.println("[SMART-GOLEM NO-DESTINATION] No valid destination found after pickup.");
+                    GolemConfig.debugLog("[SMART-GOLEM NO-DESTINATION] No valid destination found after pickup.");
                     switchState(mob, TaskState.RETURN_TO_SOURCE, returnToSourceChest, gameTime);
                 }
 
@@ -540,7 +541,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         BlockEntity blockEntity = level.getBlockEntity(currentTarget);
 
         if (!(blockEntity instanceof ChestBlockEntity chest)) {
-            System.out.println("[SMART-GOLEM ERROR] Destination target is not ChestBlockEntity at " + currentTarget);
+            GolemConfig.debugLog("[SMART-GOLEM ERROR] Destination target is not ChestBlockEntity at " + currentTarget);
             closeOpenedContainer();
             switchState(mob, TaskState.RETURN_TO_SOURCE, returnToSourceChest, gameTime);
             return;
@@ -568,13 +569,13 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 openedContainer = chest;
                 openedCopperGolem = copperGolem;
 
-                System.out.println("[SMART-GOLEM VANILLA-OPEN] destination=" + currentTarget);
+                GolemConfig.debugLog("[SMART-GOLEM VANILLA-OPEN] destination=" + currentTarget);
             }
 
             return;
         }
 
-        if (ticksAtTarget < 9) {
+        if (ticksAtTarget < GolemConfig.get().interactionOpenTicks) {
             return;
         }
 
@@ -588,7 +589,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
                 ItemStack heldBefore = mob.getMainHandItem().copy();
 
-                System.out.println("[SMART-GOLEM DEPOSIT START] chest=" + currentTarget
+                GolemConfig.debugLog("[SMART-GOLEM DEPOSIT START] chest=" + currentTarget
                         + " held=" + heldBefore);
 
                 Container targetContainer = getActualContainer(level, currentTarget, chest);
@@ -603,7 +604,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
                 movedItem = remaining.getCount() < heldBefore.getCount();
 
-                System.out.println("[SMART-GOLEM DEPOSIT END] chest=" + currentTarget
+                GolemConfig.debugLog("[SMART-GOLEM DEPOSIT END] chest=" + currentTarget
                         + " remainingHand=" + mob.getMainHandItem());
             }
 
@@ -626,7 +627,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             if (!movedItem && !mob.getMainHandItem().isEmpty()) {
 
-                System.out.println("[SMART-GOLEM DEPOSIT-FAILED] chest=" + currentTarget
+                GolemConfig.debugLog("[SMART-GOLEM DEPOSIT-FAILED] chest=" + currentTarget
                         + " still holding=" + mob.getMainHandItem()
                         + " searching for another destination");
 
@@ -648,11 +649,11 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 returnToSourceChest = sourceToReturn;
                 switchState(mob, TaskState.RETURN_TO_SOURCE, sourceToReturn, gameTime);
 
-                System.out.println("[SMART-GOLEM RETURN-TO-SOURCE] returning to=" + sourceToReturn);
+                GolemConfig.debugLog("[SMART-GOLEM RETURN-TO-SOURCE] returning to=" + sourceToReturn);
 
             } else {
 
-                System.out.println("[SMART-GOLEM RETURN-FAILED] No saved source chest.");
+                GolemConfig.debugLog("[SMART-GOLEM RETURN-FAILED] No saved source chest.");
 
                 taskState = TaskState.IDLE;
                 currentTarget = null;
@@ -683,10 +684,10 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         openedCopperGolem = null;
 
         if (carrying) {
-            System.out.println("[SMART-GOLEM MATCHED-DEPOSIT] Selected destination chest=" + best);
+            GolemConfig.debugLog("[SMART-GOLEM MATCHED-DEPOSIT] Selected destination chest=" + best);
             switchState(mob, TaskState.WALK_TO_DESTINATION, best, gameTime);
         } else {
-            System.out.println("[SMART-GOLEM SOURCE] Selected source chest=" + best);
+            GolemConfig.debugLog("[SMART-GOLEM SOURCE] Selected source chest=" + best);
             switchState(mob, TaskState.WALK_TO_SOURCE, best, gameTime);
         }
     }
@@ -696,7 +697,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
      * the search box, sorted by cheap squared-distance (closest first).
      * Real pathfinding (getPathCost) is only ever evaluated for these
      * candidates in distance order, and we stop as soon as one is reachable
-     * and accepted — avoiding O(volume * 27) pathfinding calls.
+     * and accepted â€” avoiding O(volume * 27) pathfinding calls.
      */
     private java.util.List<BlockPos> collectCandidates(
             ServerLevel level,
@@ -706,9 +707,12 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         BlockPos mobPos = mob.blockPosition();
         java.util.List<BlockPos> candidates = new java.util.ArrayList<>();
 
-        for (int x = -horizontalSearchDistance; x <= horizontalSearchDistance; x++) {
-            for (int y = -verticalSearchDistance; y <= verticalSearchDistance; y++) {
-                for (int z = -horizontalSearchDistance; z <= horizontalSearchDistance; z++) {
+        int hDist = GolemConfig.get().horizontalSearchDistance;
+        int vDist = GolemConfig.get().verticalSearchDistance;
+
+        for (int x = -hDist; x <= hDist; x++) {
+            for (int y = -vDist; y <= vDist; y++) {
+                for (int z = -hDist; z <= hDist; z++) {
 
                     BlockPos pos = mobPos.offset(x, y, z);
                     BlockState state = level.getBlockState(pos);
@@ -781,7 +785,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             Container targetContainer = getActualContainer(level, pos, chest);
 
             if (hasSpaceFor(targetContainer, held)) {
-                System.out.println("[SMART-GOLEM FULL-CHEST] Skipping matching chest because full: " + pos);
+                GolemConfig.debugLog("[SMART-GOLEM FULL-CHEST] Skipping matching chest because full: " + pos);
                 continue;
             }
 
@@ -791,7 +795,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 continue;
             }
 
-            System.out.println("[SMART-GOLEM MATCH-CHECK] chest=" + pos
+            GolemConfig.debugLog("[SMART-GOLEM MATCH-CHECK] chest=" + pos
                     + " matchedFrameItem=" + frameFilter.matchedFrameItem()
                     + " holding=" + held
                     + " matches=" + frameFilter.matchesHeld());
@@ -804,10 +808,10 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             boolean reachable = pathCost != Double.MAX_VALUE;
 
             if (!reachable) {
-                System.out.println("[SMART-GOLEM MATCHED-NO-PATH] Matched framed chest is unreachable. "
+                GolemConfig.debugLog("[SMART-GOLEM MATCHED-NO-PATH] Matched framed chest is unreachable. "
                         + "Will allow magic deposit after stuck timeout. chest=" + pos);
             } else {
-                System.out.println("[SMART-GOLEM MATCHED-PATH] Matched framed chest is reachable. chest=" + pos);
+                GolemConfig.debugLog("[SMART-GOLEM MATCHED-PATH] Matched framed chest is reachable. chest=" + pos);
             }
 
             markDestinationSelection(true, reachable);
@@ -815,7 +819,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         }
 
 
-        System.out.println("[SMART-GOLEM FALLBACK-SEARCH] No matching framed chest for "
+        GolemConfig.debugLog("[SMART-GOLEM FALLBACK-SEARCH] No matching framed chest for "
                 + held + ". Searching unfiltered destination chest.");
 
         for (BlockPos pos : candidates) {
@@ -832,15 +836,15 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             FrameFilterResult frameFilter = getFrameFilterResult(level, pos, held);
 
-            if (frameFilter.hasFrame()) {
-                System.out.println("[SMART-GOLEM FALLBACK-SKIP] Chest is filtered: " + pos);
+            if (!isFallbackEligible(frameFilter, GolemConfig.get().fallbackMode)) {
+                GolemConfig.debugLog("[SMART-GOLEM FALLBACK-SKIP] Chest not eligible for fallback: " + pos);
                 continue;
             }
 
             Container targetContainer = getActualContainer(level, pos, chest);
 
             if (hasSpaceFor(targetContainer, held)) {
-                System.out.println("[SMART-GOLEM FULL-CHEST] Skipping fallback chest because full: " + pos);
+                GolemConfig.debugLog("[SMART-GOLEM FULL-CHEST] Skipping fallback chest because full: " + pos);
                 continue;
             }
 
@@ -850,7 +854,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 continue;
             }
 
-            System.out.println("[SMART-GOLEM FALLBACK-DEPOSIT] Selected unfiltered chest=" + pos);
+            GolemConfig.debugLog("[SMART-GOLEM FALLBACK-DEPOSIT] Selected unfiltered chest=" + pos);
             markDestinationSelection(false, true);
             return pos;
         }
@@ -885,12 +889,12 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 continue;
             }
 
-            System.out.println("[SMART-GOLEM LAST-RESORT-DEPOSIT] Depositing back into source chest=" + pos);
+            GolemConfig.debugLog("[SMART-GOLEM LAST-RESORT-DEPOSIT] Depositing back into source chest=" + pos);
             markDestinationSelection(frameFilter.hasFrame(), true);
             return pos;
         }
 
-        System.out.println("[SMART-GOLEM NO-TARGET] No matching chest and no unfiltered fallback chest found for " + held);
+        GolemConfig.debugLog("[SMART-GOLEM NO-TARGET] No matching chest and no unfiltered fallback chest found for " + held);
 
         return null;
     }
@@ -906,7 +910,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             openedCopperGolem.clearOpenedChestPos();
             openedCopperGolem.setState(CopperGolemState.IDLE);
 
-            System.out.println("[SMART-GOLEM VANILLA-CLOSE]");
+            GolemConfig.debugLog("[SMART-GOLEM VANILLA-CLOSE]");
         }
 
         openedContainer = null;
@@ -923,7 +927,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 int takeAmount = Math.min(stack.getCount(), stack.getMaxStackSize());
                 ItemStack taken = stack.copyWithCount(takeAmount);
 
-                System.out.println("[SMART-GOLEM PICKUP BEFORE] tick=" + level.getGameTime()
+                GolemConfig.debugLog("[SMART-GOLEM PICKUP BEFORE] tick=" + level.getGameTime()
                         + " chest=" + currentTarget
                         + " slot=" + i
                         + " stack=" + stack
@@ -939,9 +943,9 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 lastPickupChest = currentTarget;
                 returnToSourceChest = currentTarget;
 
-                System.out.println("[SMART-GOLEM RETURN-SOURCE-SAVED] source=" + returnToSourceChest);
+                GolemConfig.debugLog("[SMART-GOLEM RETURN-SOURCE-SAVED] source=" + returnToSourceChest);
 
-                System.out.println("[SMART-GOLEM PICKUP AFTER] tick=" + level.getGameTime()
+                GolemConfig.debugLog("[SMART-GOLEM PICKUP AFTER] tick=" + level.getGameTime()
                         + " chest=" + currentTarget
                         + " slot=" + i
                         + " remainingStack=" + chest.getItem(i)
@@ -988,7 +992,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                     slot.getMaxStackSize() - slot.getCount()
             );
 
-            System.out.println("[SMART-GOLEM STACK-DEPOSIT BEFORE] chest=" + chestPos
+            GolemConfig.debugLog("[SMART-GOLEM STACK-DEPOSIT BEFORE] chest=" + chestPos
                     + " slot=" + i
                     + " slotBefore=" + slot
                     + " remaining=" + remaining
@@ -1000,7 +1004,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             chest.setChanged();
             level.blockEntityChanged(chestPos);
 
-            System.out.println("[SMART-GOLEM STACK-DEPOSIT AFTER] chest=" + chestPos
+            GolemConfig.debugLog("[SMART-GOLEM STACK-DEPOSIT AFTER] chest=" + chestPos
                     + " slot=" + i
                     + " slotAfter=" + chest.getItem(i)
                     + " remaining=" + remaining);
@@ -1018,7 +1022,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 continue;
             }
 
-            System.out.println("[SMART-GOLEM EMPTY-DEPOSIT BEFORE] chest=" + chestPos
+            GolemConfig.debugLog("[SMART-GOLEM EMPTY-DEPOSIT BEFORE] chest=" + chestPos
                     + " slot=" + i
                     + " remaining=" + remaining);
 
@@ -1027,7 +1031,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             chest.setChanged();
             level.blockEntityChanged(chestPos);
 
-            System.out.println("[SMART-GOLEM EMPTY-DEPOSIT AFTER] chest=" + chestPos
+            GolemConfig.debugLog("[SMART-GOLEM EMPTY-DEPOSIT AFTER] chest=" + chestPos
                     + " slot=" + i
                     + " slotAfter=" + chest.getItem(i));
 
@@ -1099,6 +1103,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
     private record FrameFilterResult(
             boolean hasFrame,
             boolean matchesHeld,
+            boolean hasBlankFrame,
             ItemStack matchedFrameItem
     ) {
     }
@@ -1109,6 +1114,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             ItemStack held
     ) {
         boolean hasFrame = false;
+        boolean hasBlankFrame = false;
 
         AABB box = new AABB(chestPos).inflate(1.0D);
 
@@ -1117,51 +1123,68 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             BlockPos attachedPos
                     = frame.blockPosition().relative(frame.getDirection().getOpposite());
 
-            if (!attachedPos.equals(chestPos)) {
-
-                boolean matchesDoubleChest = false;
-
-                BlockState state = level.getBlockState(chestPos);
-
-                if (state.getBlock() instanceof ChestBlock) {
-
-                    for (BlockPos nearby : new BlockPos[] {
-                            chestPos.north(),
-                            chestPos.south(),
-                            chestPos.east(),
-                            chestPos.west()
-                    }) {
-
-                        BlockState nearbyState = level.getBlockState(nearby);
-
-                        if (nearbyState.getBlock() == state.getBlock()
-                                && attachedPos.equals(nearby)) {
-
-                            matchesDoubleChest = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!matchesDoubleChest) {
-                    continue;
-                }
+            // The frame must be attached to this chest itself, or to its genuine double-chest
+            // partner. Previously any same-type neighbor counted, so two separate single chests
+            // placed side by side cross-claimed each other's frames â€” that was the misfiling bug.
+            if (!attachedPos.equals(chestPos) && !isDoubleChestPartner(level, chestPos, attachedPos)) {
+                continue;
             }
 
             ItemStack frameItem = frame.getItem();
 
             if (frameItem.isEmpty()) {
+                hasBlankFrame = true;
                 continue;
             }
 
             hasFrame = true;
 
-            if (!held.isEmpty() && ItemStack.isSameItemSameComponents(frameItem, held)) {
-                return new FrameFilterResult(true, true, frameItem.copy());
+            if (!held.isEmpty() && itemsMatch(frameItem, held)) {
+                return new FrameFilterResult(true, true, hasBlankFrame, frameItem.copy());
             }
         }
 
-        return new FrameFilterResult(hasFrame, false, ItemStack.EMPTY);
+        return new FrameFilterResult(hasFrame, false, hasBlankFrame, ItemStack.EMPTY);
+    }
+
+    /**
+     * True only when {@code neighborPos} is the real other half of a double chest whose primary
+     * block is {@code chestPos}. Uses the vanilla chest pairing (type + connected direction) rather
+     * than "any same-type neighbor", which is what fixes the adjacent-chest misfiling bug.
+     */
+    private boolean isDoubleChestPartner(ServerLevel level, BlockPos chestPos, BlockPos neighborPos) {
+        BlockState state = level.getBlockState(chestPos);
+
+        if (!(state.getBlock() instanceof ChestBlock)) {
+            return false;
+        }
+
+        net.minecraft.world.level.block.state.properties.ChestType chestType =
+                state.getValue(ChestBlock.TYPE);
+
+        if (chestType == net.minecraft.world.level.block.state.properties.ChestType.SINGLE) {
+            return false;
+        }
+
+        BlockPos partner = chestPos.relative(ChestBlock.getConnectedDirection(state));
+        return partner.equals(neighborPos);
+    }
+
+    /** Item-frame match test, honoring the configured match strictness. */
+    private boolean itemsMatch(ItemStack frameItem, ItemStack held) {
+        return switch (GolemConfig.get().matchStrictness) {
+            case ITEM_ONLY -> ItemStack.isSameItem(frameItem, held);
+            case EXACT -> ItemStack.isSameItemSameComponents(frameItem, held);
+        };
+    }
+
+    /** Whether a non-matching chest is an eligible fallback target under the configured mode. */
+    private boolean isFallbackEligible(FrameFilterResult frame, GolemConfig.FallbackMode mode) {
+        return switch (mode) {
+            case NONE -> false;
+            case BLANK_FRAME_ONLY -> frame.hasBlankFrame() && !frame.hasFrame();
+            case UNFRAMED_OR_BLANK -> !frame.hasFrame();
+        };
     }
 
     @Override
@@ -1174,7 +1197,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
 
         if (!mob.getMainHandItem().isEmpty()) {
-            System.out.println("[SMART-GOLEM STOP-CARRYING] keeping source memory, holding="
+            GolemConfig.debugLog("[SMART-GOLEM STOP-CARRYING] keeping source memory, holding="
                     + mob.getMainHandItem()
                     + " returnToSourceChest=" + returnToSourceChest);
 
@@ -1189,7 +1212,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         if (returnToSourceChest != null) {
             switchState(mob, TaskState.RETURN_TO_SOURCE, returnToSourceChest, gameTime);
 
-            System.out.println("[SMART-GOLEM STOP-KEEP-RETURN] returning to=" + returnToSourceChest);
+            GolemConfig.debugLog("[SMART-GOLEM STOP-KEEP-RETURN] returning to=" + returnToSourceChest);
             onTravelling.accept(mob);
             return;
         }
@@ -1259,7 +1282,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             return false;
         }
 
-        System.out.println("[SMART-GOLEM MAGIC-DEPOSIT-TRY] target=" + currentTarget
+        GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-TRY] target=" + currentTarget
                 + " holding=" + mob.getMainHandItem()
                 + " reachableAtSearch=" + currentDestinationHadReachablePath
                 + " distanceSqr=" + currentDistance
@@ -1275,14 +1298,14 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         BlockEntity blockEntity = level.getBlockEntity(depositTarget);
 
         if (!(blockEntity instanceof ChestBlockEntity chest)) {
-            System.out.println("[SMART-GOLEM MAGIC-DEPOSIT-CANCEL] Target is not chest: " + depositTarget);
+            GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-CANCEL] Target is not chest: " + depositTarget);
             markDestinationSelection(false, true);
             switchState(mob, TaskState.RETURN_TO_SOURCE, returnToSourceChest, gameTime);
             return true;
         }
 
         if (isChestBusy(chest)) {
-            System.out.println("[SMART-GOLEM MAGIC-DEPOSIT-WAIT] Chest busy: " + depositTarget);
+            GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-WAIT] Chest busy: " + depositTarget);
             resetStuckTracking(mob, gameTime);
             return false;
         }
@@ -1297,7 +1320,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
         if (!frameFilter.hasFrame() || !frameFilter.matchesHeld()) {
 
-            System.out.println("[SMART-GOLEM MAGIC-DEPOSIT-CANCEL] No matching frame anymore. chest="
+            GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-CANCEL] No matching frame anymore. chest="
                     + depositTarget
                     + " matchedFrameItem=" + frameFilter.matchedFrameItem()
                     + " held=" + heldBefore);
@@ -1318,7 +1341,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         Container targetContainer = getActualContainer(level, depositTarget, chest);
 
         if (hasSpaceFor(targetContainer, heldBefore)) {
-            System.out.println("[SMART-GOLEM MAGIC-DEPOSIT-CANCEL] Matched chest full: " + depositTarget);
+            GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-CANCEL] Matched chest full: " + depositTarget);
 
             markDestinationSelection(false, true);
 
@@ -1334,7 +1357,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         }
 
         if (tryLockChest(depositTarget, gameTime)) {
-            System.out.println("[SMART-GOLEM MAGIC-DEPOSIT-WAIT] Chest locked by another golem: " + depositTarget);
+            GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-WAIT] Chest locked by another golem: " + depositTarget);
             resetStuckTracking(mob, gameTime);
             return false;
         }
@@ -1364,7 +1387,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 copperGolem.setState(CopperGolemState.DROPPING_ITEM);
             }
 
-            System.out.println("[SMART-GOLEM MAGIC-DEPOSIT-SUCCESS] chest=" + depositTarget
+            GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-SUCCESS] chest=" + depositTarget
                     + " heldBefore=" + heldBefore
                     + " remaining=" + remaining);
         } else {
@@ -1373,7 +1396,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 copperGolem.setState(CopperGolemState.DROPPING_NO_ITEM);
             }
 
-            System.out.println("[SMART-GOLEM MAGIC-DEPOSIT-FAILED] Nothing moved. chest=" + depositTarget);
+            GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-FAILED] Nothing moved. chest=" + depositTarget);
         }
 
         markDestinationSelection(false, true);
@@ -1398,13 +1421,13 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             returnToSourceChest = sourceToReturn;
             switchState(mob, TaskState.RETURN_TO_SOURCE, sourceToReturn, gameTime);
 
-            System.out.println("[SMART-GOLEM MAGIC-RETURN-TO-SOURCE] returning to=" + sourceToReturn);
+            GolemConfig.debugLog("[SMART-GOLEM MAGIC-RETURN-TO-SOURCE] returning to=" + sourceToReturn);
         } else {
             taskState = TaskState.IDLE;
             currentTarget = null;
             currentWalkTarget = null;
 
-            System.out.println("[SMART-GOLEM MAGIC-RETURN-FAILED] No saved source chest.");
+            GolemConfig.debugLog("[SMART-GOLEM MAGIC-RETURN-FAILED] No saved source chest.");
         }
 
         return true;
