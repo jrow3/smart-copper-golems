@@ -1,5 +1,6 @@
 package com.anantaya.smartcgolem.ai;
 
+import com.anantaya.smartcgolem.chest.ChestLockRegistry;
 import com.anantaya.smartcgolem.config.GolemConfig;
 import com.google.common.collect.ImmutableMap;
 import net.minecraft.core.BlockPos;
@@ -25,10 +26,8 @@ import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.core.particles.ParticleTypes;
 import org.jspecify.annotations.NonNull;
 
-import java.util.HashSet;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -44,11 +43,6 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         INTERACT_DESTINATION,
         RETURN_TO_SOURCE
     }
-
-    private static final Set<BlockPos> LOCKED_CHESTS = new HashSet<>();
-    private static final Map<BlockPos, Long> LOCKED_CHESTS_TIMESTAMP = new HashMap<>();
-
-    private static final long LOCK_STALE_TICKS = 600;
 
     private static final int MAGIC_DEPOSIT_STUCK_TICKS = 100;
 
@@ -117,7 +111,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         actionDone = false;
         ticksAtTarget = 0;
         taskState = TaskState.IDLE;
-        unlockChest();
+        releaseChest(mob);
 
         if (!carrying) {
             lastPickupChest = null;
@@ -139,76 +133,47 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 || state == TaskState.INTERACT_DESTINATION;
     }
 
-    private boolean isChestLocked(BlockPos pos, long gameTime) {
-        synchronized (LOCKED_CHESTS) {
-            if (!LOCKED_CHESTS.contains(pos)) {
-                return true;
-            }
-
-            Long lockedAt = LOCKED_CHESTS_TIMESTAMP.get(pos);
-
-            if (lockedAt != null && gameTime - lockedAt > LOCK_STALE_TICKS) {
-                GolemConfig.debugLog("[SMART-GOLEM CHEST-LOCK-STALE] clearing stale lock=" + pos);
-                LOCKED_CHESTS.remove(pos);
-                LOCKED_CHESTS_TIMESTAMP.remove(pos);
-                return true;
-            }
-
-            return false;
-        }
+    private boolean isChestAvailable(PathfinderMob mob, BlockPos pos, long gameTime) {
+        return ChestLockRegistry.isAvailable(mob.level().dimension(), pos, gameTime);
     }
 
-    private boolean tryLockChest(BlockPos pos, long gameTime) {
+    /** Claims a chest for this golem, refreshing the claim if it already holds it. True on success. */
+    private boolean claimChest(PathfinderMob mob, BlockPos pos, long gameTime) {
+
+        if (pos != null && pos.equals(lockedChest)) {
+            ChestLockRegistry.refresh(mob.level().dimension(), pos, gameTime);
+            return true;
+        }
+
+        // Whatever we held is not the chest we are working now, so release it rather than keeping it
+        // claimed while we wait on a different one.
+        releaseChest(mob);
+
         if (pos == null) {
             return true;
         }
 
-        if (pos.equals(lockedChest)) {
-
-            synchronized (LOCKED_CHESTS) {
-                LOCKED_CHESTS_TIMESTAMP.put(pos, gameTime);
-            }
+        if (!ChestLockRegistry.tryLock(mob.level().dimension(), pos, gameTime)) {
             return false;
         }
 
-        synchronized (LOCKED_CHESTS) {
-            if (LOCKED_CHESTS.contains(pos)) {
-                Long lockedAt = LOCKED_CHESTS_TIMESTAMP.get(pos);
-
-                if (lockedAt != null && gameTime - lockedAt > LOCK_STALE_TICKS) {
-                    GolemConfig.debugLog("[SMART-GOLEM CHEST-LOCK-STALE] reclaiming stale lock=" + pos);
-                } else {
-                    return true;
-                }
-            }
-
-            LOCKED_CHESTS.add(pos);
-            LOCKED_CHESTS_TIMESTAMP.put(pos, gameTime);
-            lockedChest = pos;
-
-            GolemConfig.debugLog("[SMART-GOLEM CHEST-LOCK] locked=" + pos);
-            return false;
-        }
+        lockedChest = pos.immutable();
+        return true;
     }
 
-    private void unlockChest() {
+    private void releaseChest(PathfinderMob mob) {
         if (lockedChest == null) {
             return;
         }
 
-        synchronized (LOCKED_CHESTS) {
-            LOCKED_CHESTS.remove(lockedChest);
-            LOCKED_CHESTS_TIMESTAMP.remove(lockedChest);
-            GolemConfig.debugLog("[SMART-GOLEM CHEST-UNLOCK] unlocked=" + lockedChest);
-        }
-
+        ChestLockRegistry.unlock(mob.level().dimension(), lockedChest);
         lockedChest = null;
     }
 
     private void switchState(PathfinderMob mob, TaskState newState, BlockPos target, long gameTime) {
 
         if (needsChestLock(newState)) {
-            if (tryLockChest(target, gameTime)) {
+            if (!claimChest(mob, target, gameTime)) {
                 GolemConfig.debugLog("[SMART-GOLEM CHEST-LOCK-FAILED] target busy=" + target);
 
                 if (newState == TaskState.INTERACT_SOURCE) {
@@ -232,7 +197,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 return;
             }
         } else {
-            unlockChest();
+            releaseChest(mob);
         }
 
         this.taskState = newState;
@@ -283,7 +248,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                     return;
                 }
 
-                if (isChestLocked(currentTarget, gameTime) && !isChestBusy(chest)) {
+                if (isChestAvailable(mob, currentTarget, gameTime) && !isChestBusy(chest)) {
                     switchState(mob, TaskState.INTERACT_SOURCE, currentTarget, gameTime);
                 }
             }
@@ -317,7 +282,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                     return;
                 }
 
-                if (isChestLocked(currentTarget, gameTime) && !isChestBusy(chest)) {
+                if (isChestAvailable(mob, currentTarget, gameTime) && !isChestBusy(chest)) {
                     switchState(mob, TaskState.INTERACT_DESTINATION, currentTarget, gameTime);
                 }
             }
@@ -518,7 +483,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             if (!mob.getMainHandItem().isEmpty()) {
 
-                unlockChest();
+                releaseChest(mob);
 
                 BlockPos bestDestination = findDestinationChest(level, mob);
 
@@ -628,7 +593,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             actionDone = true;
 
             closeOpenedContainer();
-            unlockChest();
+            releaseChest(mob);
 
 
             if (!movedItem && !mob.getMainHandItem().isEmpty()) {
@@ -775,6 +740,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
         java.util.List<BlockPos> candidates = collectCandidates(level, mob, destinationBlockType);
 
+        BlockPos unreachableMatch = null;
 
         for (BlockPos pos : candidates) {
 
@@ -790,7 +756,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             Container targetContainer = getActualContainer(level, pos, chest);
 
-            if (hasSpaceFor(targetContainer, held)) {
+            if (isFullFor(targetContainer, held)) {
                 GolemConfig.debugLog("[SMART-GOLEM FULL-CHEST] Skipping matching chest because full: " + pos);
                 continue;
             }
@@ -811,17 +777,31 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             }
 
             double pathCost = getPathCost(mob, pos);
-            boolean reachable = pathCost != Double.MAX_VALUE;
 
-            if (!reachable) {
-                GolemConfig.debugLog("[SMART-GOLEM MATCHED-NO-PATH] Matched framed chest is unreachable. "
-                        + "Will allow magic deposit after stuck timeout. chest=" + pos);
-            } else {
-                GolemConfig.debugLog("[SMART-GOLEM MATCHED-PATH] Matched framed chest is reachable. chest=" + pos);
+            if (pathCost == Double.MAX_VALUE) {
+                // Remember it, but keep looking. Candidates are ordered by straight-line distance, so
+                // returning here let a walled-off chest a few blocks away permanently shadow a
+                // reachable one further out.
+                if (unreachableMatch == null) {
+                    unreachableMatch = pos;
+                    GolemConfig.debugLog("[SMART-GOLEM MATCHED-NO-PATH] Matched framed chest is unreachable, "
+                            + "continuing to look for a reachable one. chest=" + pos);
+                }
+                continue;
             }
 
-            markDestinationSelection(true, reachable);
+            GolemConfig.debugLog("[SMART-GOLEM MATCHED-PATH] Matched framed chest is reachable. chest=" + pos);
+            markDestinationSelection(true, true);
             return pos;
+        }
+
+        if (unreachableMatch != null) {
+            // Nothing reachable matched, so fall back to the walled-off chest and let the stuck
+            // timeout hand the item over.
+            GolemConfig.debugLog("[SMART-GOLEM MATCHED-NO-PATH-ONLY] No reachable match. Will allow magic "
+                    + "deposit after stuck timeout. chest=" + unreachableMatch);
+            markDestinationSelection(true, false);
+            return unreachableMatch;
         }
 
 
@@ -849,7 +829,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             Container targetContainer = getActualContainer(level, pos, chest);
 
-            if (hasSpaceFor(targetContainer, held)) {
+            if (isFullFor(targetContainer, held)) {
                 GolemConfig.debugLog("[SMART-GOLEM FULL-CHEST] Skipping fallback chest because full: " + pos);
                 continue;
             }
@@ -1106,7 +1086,12 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         return targetContainer;
     }
 
-    private boolean hasSpaceFor(Container chest, ItemStack item) {
+    /**
+     * Whether the chest has nowhere to put the item: no empty slot, and no matching stack with room
+     * left. Named for what it returns; it was previously called hasSpaceFor, which meant the exact
+     * opposite of its result.
+     */
+    private boolean isFullFor(Container chest, ItemStack item) {
 
         for (int i = 0; i < chest.getContainerSize(); i++) {
             ItemStack slot = chest.getItem(i);
@@ -1232,7 +1217,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
     @Override
     protected void stop(@NonNull ServerLevel level, PathfinderMob mob, long gameTime) {
         closeOpenedContainer();
-        unlockChest();
+        releaseChest(mob);
 
         ticksAtTarget = 0;
         actionDone = false;
@@ -1382,7 +1367,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
         Container targetContainer = getActualContainer(level, depositTarget, chest);
 
-        if (hasSpaceFor(targetContainer, heldBefore)) {
+        if (isFullFor(targetContainer, heldBefore)) {
             GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-CANCEL] Matched chest full: " + depositTarget);
 
             markDestinationSelection(false, true);
@@ -1411,7 +1396,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         try {
             remaining = insertIntoChest(level, depositTarget, targetContainer, heldBefore);
         } finally {
-            unlockChest();
+            releaseChest(mob);
         }
 
         mob.setItemInHand(InteractionHand.MAIN_HAND, remaining);

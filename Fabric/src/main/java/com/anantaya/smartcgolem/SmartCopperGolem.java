@@ -1,11 +1,13 @@
 package com.anantaya.smartcgolem;
 
+import com.anantaya.smartcgolem.chest.ChestLockRegistry;
 import com.anantaya.smartcgolem.command.CopperGolemCommand;
 import com.anantaya.smartcgolem.config.GolemConfig;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -42,6 +44,10 @@ public class SmartCopperGolem implements ModInitializer {
 				applyGolemStats(golem);
 			}
 		});
+
+		// Chest locks are static, so on an integrated server they would otherwise leak into the next
+		// world loaded in the same JVM.
+		ServerLifecycleEvents.SERVER_STOPPED.register(server -> ChestLockRegistry.clear());
 
 		LOGGER.info("Copper Golems are smart now!");
 	}
