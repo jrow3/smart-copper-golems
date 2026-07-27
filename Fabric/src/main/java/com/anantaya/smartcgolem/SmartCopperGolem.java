@@ -7,7 +7,7 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -21,10 +21,10 @@ public class SmartCopperGolem implements ModInitializer {
 
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-	private static final ResourceLocation HEALTH_OVERRIDE_ID =
-			ResourceLocation.fromNamespaceAndPath(MOD_ID, "config_base_health");
-	private static final ResourceLocation SPEED_OVERRIDE_ID =
-			ResourceLocation.fromNamespaceAndPath(MOD_ID, "config_base_move_speed");
+	private static final Identifier HEALTH_OVERRIDE_ID =
+			Identifier.fromNamespaceAndPath(MOD_ID, "config_base_health");
+	private static final Identifier SPEED_OVERRIDE_ID =
+			Identifier.fromNamespaceAndPath(MOD_ID, "config_base_move_speed");
 
 	@Override
 	public void onInitialize() {
@@ -64,7 +64,7 @@ public class SmartCopperGolem implements ModInitializer {
 	 * persisted into the entity's NBT, so it could never be undone: setting the knob back to -1 left
 	 * every golem already touched stuck at the old value.
 	 */
-	private static void applyOverride(AttributeInstance attribute, ResourceLocation id, double target) {
+	private static void applyOverride(AttributeInstance attribute, Identifier id, double target) {
 		if (attribute == null) {
 			return;
 		}
