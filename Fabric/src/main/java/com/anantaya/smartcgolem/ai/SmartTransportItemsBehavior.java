@@ -14,6 +14,7 @@ import net.minecraft.world.entity.ai.behavior.BehaviorUtils;
 import net.minecraft.world.entity.animal.golem.CopperGolem;
 import net.minecraft.world.entity.animal.golem.CopperGolemState;
 import net.minecraft.world.entity.decoration.ItemFrame;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
@@ -79,6 +80,9 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
     private int ticksAtTarget = 0;
     private long nextSearchTick = 0;
+
+    /** Items this golem just failed to route, and the tick each becomes eligible for pickup again. */
+    private final Map<Item, Long> unroutableUntilTick = new HashMap<>();
 
     private static final int ARRIVAL_DISTANCE_SQUARED = 4;
     private static final int SEARCH_COOLDOWN_TICKS = 20;
@@ -329,6 +333,8 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                         copperGolem.clearOpenedChestPos();
                         copperGolem.setState(CopperGolemState.IDLE);
                     }
+
+                    returnHeldItemToSource(level, mob, gameTime);
 
                     GolemConfig.debugLog("[SMART-GOLEM RETURNED-TO-SOURCE] source=" + currentTarget);
 
@@ -741,7 +747,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 continue;
             }
 
-            if (!hasAnyItem(chest)) {
+            if (!hasAnyItem(chest, level.getGameTime())) {
                 continue;
             }
 
@@ -859,41 +865,11 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             return pos;
         }
 
-        for (BlockPos pos : candidates) {
-
-            if (!pos.equals(lastPickupChest)) {
-                continue;
-            }
-
-            BlockEntity blockEntity = level.getBlockEntity(pos);
-
-            if (!(blockEntity instanceof ChestBlockEntity chest)) {
-                continue;
-            }
-
-            Container targetContainer = getActualContainer(level, pos, chest);
-
-            if (hasSpaceFor(targetContainer, held)) {
-                continue;
-            }
-
-            FrameFilterResult frameFilter = getFrameFilterResult(level, pos, held);
-
-            if (frameFilter.hasFrame() && !frameFilter.matchesHeld()) {
-                continue;
-            }
-
-            double pathCost = getPathCost(mob, pos);
-
-            if (pathCost == Double.MAX_VALUE) {
-                continue;
-            }
-
-            GolemConfig.debugLog("[SMART-GOLEM LAST-RESORT-DEPOSIT] Depositing back into source chest=" + pos);
-            markDestinationSelection(frameFilter.hasFrame(), true);
-            return pos;
-        }
-
+        // A third pass used to live here, meant to deposit back into the source chest as a last
+        // resort. It could never run: it required the candidate to equal lastPickupChest, but
+        // candidates come from the destination predicate (vanilla chests) while lastPickupChest is
+        // always a copper chest. Returning null now routes the golem through RETURN_TO_SOURCE,
+        // which puts the item back for real.
         GolemConfig.debugLog("[SMART-GOLEM NO-TARGET] No matching chest and no unfiltered fallback chest found for " + held);
 
         return null;
@@ -922,7 +898,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         for (int i = 0; i < chest.getContainerSize(); i++) {
             ItemStack stack = chest.getItem(i);
 
-            if (!stack.isEmpty()) {
+            if (!stack.isEmpty() && !isOnUnroutableCooldown(stack.getItem(), level.getGameTime())) {
 
                 int takeAmount = Math.min(stack.getCount(), stack.getMaxStackSize());
                 ItemStack taken = stack.copyWithCount(takeAmount);
@@ -956,6 +932,65 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         }
 
         return false;
+    }
+
+    /**
+     * Puts an item the golem could not route back where it came from.
+     *
+     * <p>Previously the golem simply kept holding it: RETURN_TO_SOURCE cleared its state without
+     * depositing, and the last-resort pass meant to cover this could never run, because its
+     * candidates come from the destination predicate (vanilla chests) while the source chest is
+     * always a copper chest. The item stayed in the golem's hand and it rescanned once a second
+     * forever.
+     */
+    private void returnHeldItemToSource(ServerLevel level, PathfinderMob mob, long gameTime) {
+
+        ItemStack held = mob.getMainHandItem();
+
+        if (held.isEmpty() || currentTarget == null) {
+            return;
+        }
+
+        BlockEntity blockEntity = level.getBlockEntity(currentTarget);
+
+        if (!(blockEntity instanceof ChestBlockEntity chest)) {
+            return;
+        }
+
+        Item returned = held.getItem();
+        Container container = getActualContainer(level, currentTarget, chest);
+        ItemStack leftover = insertIntoChest(level, currentTarget, container, held);
+
+        mob.setItemInHand(InteractionHand.MAIN_HAND, leftover);
+        markUnroutable(returned, gameTime);
+
+        GolemConfig.debugLog("[SMART-GOLEM RETURNED-ITEM] source=" + currentTarget
+                + " item=" + returned
+                + " leftover=" + leftover);
+    }
+
+    /** Stops the golem immediately re-grabbing a stack it just proved it cannot deliver. */
+    private void markUnroutable(Item item, long gameTime) {
+        int cooldown = GolemConfig.get().unroutableItemCooldownTicks;
+
+        if (cooldown > 0) {
+            unroutableUntilTick.put(item, gameTime + cooldown);
+        }
+    }
+
+    private boolean isOnUnroutableCooldown(Item item, long gameTime) {
+        Long until = unroutableUntilTick.get(item);
+
+        if (until == null) {
+            return false;
+        }
+
+        if (gameTime >= until) {
+            unroutableUntilTick.remove(item);
+            return false;
+        }
+
+        return true;
     }
 
     private ItemStack insertIntoChest(
@@ -1089,10 +1124,17 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         return true;
     }
 
-    private boolean hasAnyItem(ChestBlockEntity chest) {
+    /**
+     * Whether the chest holds anything this golem would actually pick up right now. Items on the
+     * unroutable cooldown do not count, otherwise the golem keeps walking to a chest it is going to
+     * refuse to take from.
+     */
+    private boolean hasAnyItem(ChestBlockEntity chest, long gameTime) {
 
         for (int i = 0; i < chest.getContainerSize(); i++) {
-            if (!chest.getItem(i).isEmpty()) {
+            ItemStack stack = chest.getItem(i);
+
+            if (!stack.isEmpty() && !isOnUnroutableCooldown(stack.getItem(), gameTime)) {
                 return true;
             }
         }
