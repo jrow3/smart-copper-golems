@@ -1383,7 +1383,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             return true;
         }
 
-        if (tryLockChest(depositTarget, gameTime)) {
+        if (!claimChest(mob, depositTarget, gameTime)) {
             GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-WAIT] Chest locked by another golem: " + depositTarget);
             resetStuckTracking(mob, gameTime);
             return false;
