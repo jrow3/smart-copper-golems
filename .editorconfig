@@ -1,0 +1,9 @@
+root = true
+
+# The two mojibake em-dashes in SmartTransportItemsBehavior.java came from an
+# editor saving UTF-8 content back out as CP1252. This pins the charset so it
+# cannot happen again.
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true

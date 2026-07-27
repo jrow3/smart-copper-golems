@@ -30,7 +30,7 @@ public final class GolemConfig {
     public enum FallbackMode {
         /** Only chests carrying a blank (empty) item frame. */
         BLANK_FRAME_ONLY,
-        /** Chests with no non-empty frame — i.e. truly unframed OR blank-framed. */
+        /** Chests with no non-empty frame: truly unframed OR blank-framed. */
         UNFRAMED_OR_BLANK,
         /** No fallback: only deposit into a chest whose frame matches the held item. */
         NONE

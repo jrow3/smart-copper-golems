@@ -697,7 +697,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
      * the search box, sorted by cheap squared-distance (closest first).
      * Real pathfinding (getPathCost) is only ever evaluated for these
      * candidates in distance order, and we stop as soon as one is reachable
-     * and accepted â€” avoiding O(volume * 27) pathfinding calls.
+     * and accepted, avoiding O(volume * 27) pathfinding calls.
      */
     private java.util.List<BlockPos> collectCandidates(
             ServerLevel level,
@@ -1125,7 +1125,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             // The frame must be attached to this chest itself, or to its genuine double-chest
             // partner. Previously any same-type neighbor counted, so two separate single chests
-            // placed side by side cross-claimed each other's frames â€” that was the misfiling bug.
+            // placed side by side cross-claimed each other's frames: that was the misfiling bug.
             if (!attachedPos.equals(chestPos) && !isDoubleChestPartner(level, chestPos, attachedPos)) {
                 continue;
             }
