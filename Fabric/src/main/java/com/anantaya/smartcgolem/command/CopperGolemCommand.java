@@ -33,12 +33,15 @@ public final class CopperGolemCommand {
             "haulSpeed",
             "interactionOpenTicks",
             "interactionCloseTicks",
+            "unroutableItemCooldownTicks",
             "matchStrictness",
             "fallbackMode",
             "debug",
             "baseHealth",
             "baseMoveSpeed"
     };
+
+    private static final String[] BOOLEAN_KEYS = {"debug"};
 
     private CopperGolemCommand() {
     }
@@ -62,7 +65,7 @@ public final class CopperGolemCommand {
                                                 .executes(CopperGolemCommand::set))))
                         .then(Commands.literal("toggle")
                                 .then(Commands.argument("key", StringArgumentType.word())
-                                        .suggests(CopperGolemCommand::suggestKeys)
+                                        .suggests(CopperGolemCommand::suggestBooleanKeys)
                                         .executes(CopperGolemCommand::toggle)))
         );
     }
@@ -70,6 +73,12 @@ public final class CopperGolemCommand {
     private static CompletableFuture<Suggestions> suggestKeys(
             CommandContext<CommandSourceStack> ctx, SuggestionsBuilder builder) {
         return SharedSuggestionProvider.suggest(KEYS, builder);
+    }
+
+    /** toggle only accepts boolean keys, so suggesting the other nine would be nine guaranteed errors. */
+    private static CompletableFuture<Suggestions> suggestBooleanKeys(
+            CommandContext<CommandSourceStack> ctx, SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(BOOLEAN_KEYS, builder);
     }
 
     private static int list(CommandContext<CommandSourceStack> ctx) {
@@ -106,11 +115,12 @@ public final class CopperGolemCommand {
                 case "haulSpeed" -> c.haulSpeed = Float.parseFloat(raw);
                 case "interactionOpenTicks" -> c.interactionOpenTicks = Integer.parseInt(raw);
                 case "interactionCloseTicks" -> c.interactionCloseTicks = Integer.parseInt(raw);
+                case "unroutableItemCooldownTicks" -> c.unroutableItemCooldownTicks = Integer.parseInt(raw);
                 case "matchStrictness" -> c.matchStrictness =
                         GolemConfig.MatchStrictness.valueOf(raw.toUpperCase(Locale.ROOT));
                 case "fallbackMode" -> c.fallbackMode =
                         GolemConfig.FallbackMode.valueOf(raw.toUpperCase(Locale.ROOT));
-                case "debug" -> c.debug = Boolean.parseBoolean(raw);
+                case "debug" -> c.debug = parseBoolean(raw);
                 case "baseHealth" -> c.baseHealth = Double.parseDouble(raw);
                 case "baseMoveSpeed" -> c.baseMoveSpeed = Double.parseDouble(raw);
                 default -> {
@@ -124,10 +134,29 @@ public final class CopperGolemCommand {
             return 0;
         }
 
+        String requested = valueOf(c, key);
         GolemConfig.save();
-        String value = valueOf(c, key);
-        ctx.getSource().sendSuccess(() -> Component.literal("Set " + key + " = " + value), true);
+        String stored = valueOf(c, key);
+
+        String message = requested.equals(stored)
+                ? "Set " + key + " = " + stored
+                : "Set " + key + " = " + stored + " (clamped from " + requested + ")";
+        ctx.getSource().sendSuccess(() -> Component.literal(message), true);
         return 1;
+    }
+
+    /**
+     * {@link Boolean#parseBoolean} never throws, so it would silently turn {@code set debug yes} into
+     * {@code false} and report it as a success.
+     */
+    private static boolean parseBoolean(String raw) {
+        if ("true".equalsIgnoreCase(raw)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(raw)) {
+            return false;
+        }
+        throw new IllegalArgumentException("expected true or false");
     }
 
     private static int toggle(CommandContext<CommandSourceStack> ctx) {
@@ -161,6 +190,7 @@ public final class CopperGolemCommand {
             case "haulSpeed" -> Float.toString(c.haulSpeed);
             case "interactionOpenTicks" -> Integer.toString(c.interactionOpenTicks);
             case "interactionCloseTicks" -> Integer.toString(c.interactionCloseTicks);
+            case "unroutableItemCooldownTicks" -> Integer.toString(c.unroutableItemCooldownTicks);
             case "matchStrictness" -> c.matchStrictness.name();
             case "fallbackMode" -> c.fallbackMode.name();
             case "debug" -> Boolean.toString(c.debug);

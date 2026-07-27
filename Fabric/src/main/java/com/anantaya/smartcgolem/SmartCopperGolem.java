@@ -7,7 +7,9 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.golem.CopperGolem;
 
@@ -18,6 +20,11 @@ public class SmartCopperGolem implements ModInitializer {
 	public static final String MOD_ID = "smart-copper-golem";
 
 	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+
+	private static final ResourceLocation HEALTH_OVERRIDE_ID =
+			ResourceLocation.fromNamespaceAndPath(MOD_ID, "config_base_health");
+	private static final ResourceLocation SPEED_OVERRIDE_ID =
+			ResourceLocation.fromNamespaceAndPath(MOD_ID, "config_base_move_speed");
 
 	@Override
 	public void onInitialize() {
@@ -43,19 +50,30 @@ public class SmartCopperGolem implements ModInitializer {
 	private static void applyGolemStats(CopperGolem golem) {
 		GolemConfig config = GolemConfig.get();
 
-		if (config.baseHealth > 0) {
-			AttributeInstance maxHealth = golem.getAttribute(Attributes.MAX_HEALTH);
-			if (maxHealth != null) {
-				maxHealth.setBaseValue(config.baseHealth);
-				golem.setHealth((float) config.baseHealth);
-			}
+		applyOverride(golem.getAttribute(Attributes.MAX_HEALTH), HEALTH_OVERRIDE_ID, config.baseHealth);
+		applyOverride(golem.getAttribute(Attributes.MOVEMENT_SPEED), SPEED_OVERRIDE_ID, config.baseMoveSpeed);
+
+		// Only ever clamps downward, so lowering max health does not leave a golem above its cap and
+		// raising it does not heal one. The previous unconditional setHealth healed every damaged
+		// golem on every chunk reload.
+		golem.setHealth(Math.min(golem.getHealth(), golem.getMaxHealth()));
+	}
+
+	/**
+	 * Expresses the override as a named modifier rather than a new base value. setBaseValue is
+	 * persisted into the entity's NBT, so it could never be undone: setting the knob back to -1 left
+	 * every golem already touched stuck at the old value.
+	 */
+	private static void applyOverride(AttributeInstance attribute, ResourceLocation id, double target) {
+		if (attribute == null) {
+			return;
 		}
 
-		if (config.baseMoveSpeed > 0) {
-			AttributeInstance moveSpeed = golem.getAttribute(Attributes.MOVEMENT_SPEED);
-			if (moveSpeed != null) {
-				moveSpeed.setBaseValue(config.baseMoveSpeed);
-			}
+		attribute.removeModifier(id);
+
+		if (target > 0) {
+			attribute.addOrReplacePermanentModifier(new AttributeModifier(
+					id, target - attribute.getBaseValue(), AttributeModifier.Operation.ADD_VALUE));
 		}
 	}
 }
