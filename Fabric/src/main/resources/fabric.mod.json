@@ -5,15 +5,16 @@
 	"name": "Smart Copper Golem",
 	"description": "A mod to convert copper golem into smart copper golem!",
 	"authors": [
-		"GameMech007!"
+		"GameMech007! (original author)",
+		"John Rowe (fork maintainer)"
 	],
 	"contact": {
-		"homepage": "https://modrinth.com/mod/smart-copper-golems",
-		"sources": "https://github.com/gamemech007/smart-copper-golems",
-		"issues": "https://github.com/gamemech007/smart-copper-golems/issues"
+		"homepage": "https://github.com/jrow3/smart-copper-golems",
+		"sources": "https://github.com/jrow3/smart-copper-golems",
+		"issues": "https://github.com/jrow3/smart-copper-golems/issues"
 	},
 	"license": "Apache-2.0",
-	"icon": "assets/smart-golem/icon.png",
+	"icon": "assets/smart-copper-golem/icon.png",
 	"environment": "*",
 	"entrypoints": {
 		"main": [
