@@ -34,8 +34,14 @@ base {
     archivesName = mod_id
 }
 
-// Mojang ships Java 25 to end users in 26.2, so mods should target Java 25.
-java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+// Mojang ships Java 25 to end users in 26.2, so the bytecode must stay on 25 — but the compiler
+// itself runs on 26, because that is the only JDK on the build machines and a 25-pinned toolchain
+// refuses to resolve. Mirrors the Fabric module: toolchain 26, release 25.
+java.toolchain.languageVersion = JavaLanguageVersion.of(26)
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.release = 25
+}
 
 neoForge {
     // Specify the version of NeoForge to use.
