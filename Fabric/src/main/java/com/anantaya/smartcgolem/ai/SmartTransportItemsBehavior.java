@@ -53,11 +53,8 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
     private long stuckStartedAt = -1L;
 
-    private final float speedModifier;
     private final Predicate<BlockState> sourceBlockType;
     private final Predicate<BlockState> destinationBlockType;
-    private final int horizontalSearchDistance;
-    private final int verticalSearchDistance;
     private final Consumer<PathfinderMob> onTravelling;
 
     private TaskState taskState = TaskState.IDLE;
@@ -86,20 +83,14 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
     private static final int SEARCH_COOLDOWN_TICKS = 20;
 
     public SmartTransportItemsBehavior(
-            float speedModifier,
             Predicate<BlockState> sourceBlockType,
             Predicate<BlockState> destinationBlockType,
-            int horizontalSearchDistance,
-            int verticalSearchDistance,
             Consumer<PathfinderMob> onTravelling
     ) {
         super(ImmutableMap.of(), 200);
 
-        this.speedModifier = speedModifier;
         this.sourceBlockType = sourceBlockType;
         this.destinationBlockType = destinationBlockType;
-        this.horizontalSearchDistance = horizontalSearchDistance;
-        this.verticalSearchDistance = verticalSearchDistance;
         this.onTravelling = onTravelling;
     }
 

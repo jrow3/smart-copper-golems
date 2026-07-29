@@ -5,14 +5,10 @@ import com.google.common.collect.ImmutableMap;
 import com.mojang.datafixers.util.Pair;
 
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-import net.minecraft.sounds.SoundEvent;
-import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.BlockTags;
-import net.minecraft.world.Container;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.ActivityData;
@@ -24,8 +20,6 @@ import net.minecraft.world.entity.animal.golem.CopperGolemState;
 import net.minecraft.world.entity.schedule.Activity;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
-
-import org.jspecify.annotations.Nullable;
 
 public class SmartCopperGolemAi {
 
@@ -83,11 +77,8 @@ public class SmartCopperGolemAi {
                         Pair.of(
                                 0,
                                 new SmartTransportItemsBehavior(
-                                        1.0F,
                                         TRANSPORT_ITEM_SOURCE_BLOCK,
                                         TRANSPORT_ITEM_DESTINATION_BLOCK,
-                                        32,
-                                        8,
                                         onTravelling()
                                 )
                         ),
@@ -130,81 +121,6 @@ public class SmartCopperGolemAi {
                         )
                 )
         );
-    }
-
-    private static Map<
-            TransportItemsBetweenContainers.ContainerInteractionState,
-            TransportItemsBetweenContainers.OnTargetReachedInteraction
-            > getTargetReachedInteractions() {
-
-        return Map.of(
-                TransportItemsBetweenContainers.ContainerInteractionState.PICKUP_ITEM,
-                onReachedTargetInteraction(
-                        CopperGolemState.GETTING_ITEM,
-                        SoundEvents.COPPER_GOLEM_ITEM_GET
-                ),
-
-                TransportItemsBetweenContainers.ContainerInteractionState.PICKUP_NO_ITEM,
-                onReachedTargetInteraction(
-                        CopperGolemState.GETTING_NO_ITEM,
-                        SoundEvents.COPPER_GOLEM_ITEM_NO_GET
-                ),
-
-                TransportItemsBetweenContainers.ContainerInteractionState.PLACE_ITEM,
-                onReachedTargetInteraction(
-                        CopperGolemState.DROPPING_ITEM,
-                        SoundEvents.COPPER_GOLEM_ITEM_DROP
-                ),
-
-                TransportItemsBetweenContainers.ContainerInteractionState.PLACE_NO_ITEM,
-                onReachedTargetInteraction(
-                        CopperGolemState.DROPPING_NO_ITEM,
-                        SoundEvents.COPPER_GOLEM_ITEM_NO_DROP
-                )
-        );
-    }
-
-    private static TransportItemsBetweenContainers.OnTargetReachedInteraction onReachedTargetInteraction(
-            final CopperGolemState state,
-            @Nullable final SoundEvent sound
-    ) {
-
-        return (body, target, ticksSinceReachingTarget) -> {
-
-            if (body instanceof CopperGolem copperGolem) {
-
-                Container container = target.container();
-
-                if (ticksSinceReachingTarget == 1) {
-
-                    container.startOpen(copperGolem);
-
-                    copperGolem.setOpenedChestPos(
-                            target.pos()
-                    );
-
-                    copperGolem.setState(state);
-                }
-
-                if (ticksSinceReachingTarget == 9
-                        && sound != null) {
-
-                    copperGolem.playSound(sound);
-                }
-
-                if (ticksSinceReachingTarget == 60) {
-
-                    if (container
-                            .getEntitiesWithContainerOpen()
-                            .contains(body)) {
-
-                        container.stopOpen(copperGolem);
-                    }
-
-                    copperGolem.clearOpenedChestPos();
-                }
-            }
-        };
     }
 
     private static Consumer<PathfinderMob> onTravelling() {
