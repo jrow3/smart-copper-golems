@@ -8,10 +8,19 @@ on: [pull_request, push]
 
 jobs:
   build:
+    # Both loader modules are built. NeoForge is in the matrix because it spent the fork's whole
+    # history uncompilable without anyone noticing -- nothing was watching it. fail-fast is off so a
+    # break in one loader still reports the other's result instead of cancelling it.
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [Fabric, NeoForge]
+
+    name: build (${{ matrix.module }})
     runs-on: ubuntu-24.04
     defaults:
       run:
-        working-directory: Fabric
+        working-directory: ${{ matrix.module }}
     steps:
       - name: checkout repository
         uses: actions/checkout@v6
@@ -29,5 +38,6 @@ jobs:
       - name: capture build artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: Artifacts
-          path: Fabric/build/libs/
+          # Names have to be unique across the matrix or the second upload collides with the first.
+          name: Artifacts-${{ matrix.module }}
+          path: ${{ matrix.module }}/build/libs/
