@@ -20,6 +20,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.level.block.ChestBlock;
@@ -346,35 +347,15 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         return mob.blockPosition().distSqr(pos);
     }
 
-    private double getPathCost(PathfinderMob mob, BlockPos chestPos) {
+    /**
+     * Best reachable stand position adjacent to a chest, and its path cost
+     * (Double.MAX_VALUE when nothing nearby can be reached). Bundles what the two
+     * former copies — getPathCost and findBestWalkTargetForChest — each computed
+     * separately from the same 18 createPath() calls over the 3x2x3 shell.
+     */
+    private record WalkTarget(BlockPos pos, double cost) {}
 
-        double bestCost = Double.MAX_VALUE;
-
-        for (BlockPos nearby : BlockPos.betweenClosed(
-                chestPos.offset(-1, 0, -1),
-                chestPos.offset(1, 1, 1))) {
-
-            Path path = mob.getNavigation().createPath(nearby, 1);
-
-            if (path == null || !path.canReach()) {
-                continue;
-            }
-
-            double cost = path.getNodeCount();
-
-            if (cost < bestCost) {
-                bestCost = cost;
-            }
-        }
-
-        if (bestCost == Double.MAX_VALUE) {
-            GolemConfig.debugLog("[SMART-GOLEM PATH-SKIP] Cannot path near " + chestPos);
-        }
-
-        return bestCost;
-    }
-
-    private BlockPos findBestWalkTargetForChest(PathfinderMob mob, BlockPos chestPos) {
+    private WalkTarget findWalkTarget(PathfinderMob mob, BlockPos chestPos) {
 
         BlockPos best = chestPos;
         double bestCost = Double.MAX_VALUE;
@@ -391,6 +372,11 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             double cost = path.getNodeCount();
 
+            // Bias the chosen stand position toward the return chest's height so the
+            // golem doesn't commit to a target that forces an extra vertical detour.
+            // The bias is finite, so it never turns a reachable chest unreachable or
+            // vice versa — getPathCost callers only test cost == MAX_VALUE, which is
+            // unaffected; it only influences which adjacent block gets picked.
             if (returnToSourceChest != null) {
                 cost += Math.abs(nearby.getY() - returnToSourceChest.getY()) * 200;
             }
@@ -401,7 +387,19 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             }
         }
 
-        return best;
+        if (bestCost == Double.MAX_VALUE) {
+            GolemConfig.debugLog("[SMART-GOLEM PATH-SKIP] Cannot path near " + chestPos);
+        }
+
+        return new WalkTarget(best, bestCost);
+    }
+
+    private double getPathCost(PathfinderMob mob, BlockPos chestPos) {
+        return findWalkTarget(mob, chestPos).cost();
+    }
+
+    private BlockPos findBestWalkTargetForChest(PathfinderMob mob, BlockPos chestPos) {
+        return findWalkTarget(mob, chestPos).pos();
     }
 
     private void interactWithSource(ServerLevel level, PathfinderMob mob, long gameTime) {
@@ -681,14 +679,44 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         int hDist = GolemConfig.get().horizontalSearchDistance;
         int vDist = GolemConfig.get().verticalSearchDistance;
 
-        for (int x = -hDist; x <= hDist; x++) {
-            for (int y = -vDist; y <= vDist; y++) {
-                for (int z = -hDist; z <= hDist; z++) {
+        int minX = mobPos.getX() - hDist;
+        int maxX = mobPos.getX() + hDist;
+        int minY = mobPos.getY() - vDist;
+        int maxY = mobPos.getY() + vDist;
+        int minZ = mobPos.getZ() - hDist;
+        int maxZ = mobPos.getZ() + hDist;
 
-                    BlockPos pos = mobPos.offset(x, y, z);
-                    BlockState state = level.getBlockState(pos);
+        // Chests are block entities, so rather than probing every block in the box
+        // (which also force-loads and generates chunks up to hDist out, synchronously
+        // on the server thread), iterate the block-entity map of each already-loaded
+        // chunk the box touches. getChunkNow returns null for unloaded chunks instead
+        // of loading them. This yields the same matching set as the old box walk at a
+        // fraction of the cost, and no longer drags in distant terrain at range 64.
+        int minChunkX = minX >> 4;
+        int maxChunkX = maxX >> 4;
+        int minChunkZ = minZ >> 4;
+        int maxChunkZ = maxZ >> 4;
 
-                    if (!blockType.test(state)) {
+        for (int cx = minChunkX; cx <= maxChunkX; cx++) {
+            for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
+
+                LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
+
+                if (chunk == null) {
+                    continue;
+                }
+
+                for (Map.Entry<BlockPos, BlockEntity> entry : chunk.getBlockEntities().entrySet()) {
+
+                    BlockPos pos = entry.getKey();
+
+                    if (pos.getX() < minX || pos.getX() > maxX
+                            || pos.getY() < minY || pos.getY() > maxY
+                            || pos.getZ() < minZ || pos.getZ() > maxZ) {
+                        continue;
+                    }
+
+                    if (!blockType.test(entry.getValue().getBlockState())) {
                         continue;
                     }
 
@@ -740,6 +768,10 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
         java.util.List<BlockPos> candidates = collectCandidates(level, mob, destinationBlockType);
 
+        // Query every item frame in the search volume once and bucket by the block each is attached
+        // to, rather than running getEntitiesOfClass per candidate across both passes below.
+        Map<BlockPos, java.util.List<ItemFrame>> framesByAttachedPos = collectFramesByAttachedPos(level, mob);
+
         BlockPos unreachableMatch = null;
 
         for (BlockPos pos : candidates) {
@@ -761,7 +793,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 continue;
             }
 
-            FrameFilterResult frameFilter = getFrameFilterResult(level, pos, held);
+            FrameFilterResult frameFilter = getFrameFilterResult(level, pos, held, framesByAttachedPos);
 
             if (!frameFilter.hasFrame()) {
                 continue;
@@ -820,7 +852,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 continue;
             }
 
-            FrameFilterResult frameFilter = getFrameFilterResult(level, pos, held);
+            FrameFilterResult frameFilter = getFrameFilterResult(level, pos, held, framesByAttachedPos);
 
             if (!isFallbackEligible(frameFilter, GolemConfig.get().fallbackMode)) {
                 GolemConfig.debugLog("[SMART-GOLEM FALLBACK-SKIP] Chest not eligible for fallback: " + pos);
@@ -1135,27 +1167,76 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
     ) {
     }
 
+    /**
+     * Item frames in the search volume, bucketed by the block position each is attached to. Built
+     * once per destination scan so the per-candidate matcher is a map lookup instead of a fresh
+     * getEntitiesOfClass query.
+     */
+    private Map<BlockPos, java.util.List<ItemFrame>> collectFramesByAttachedPos(ServerLevel level, PathfinderMob mob) {
+
+        BlockPos mobPos = mob.blockPosition();
+        int h = GolemConfig.get().horizontalSearchDistance + 1;
+        int v = GolemConfig.get().verticalSearchDistance + 1;
+
+        // +1 margin so a frame on the outer face of a boundary chest is still captured.
+        AABB box = new AABB(
+                mobPos.getX() - h, mobPos.getY() - v, mobPos.getZ() - h,
+                mobPos.getX() + h + 1, mobPos.getY() + v + 1, mobPos.getZ() + h + 1);
+
+        Map<BlockPos, java.util.List<ItemFrame>> map = new HashMap<>();
+
+        for (ItemFrame frame : level.getEntitiesOfClass(ItemFrame.class, box)) {
+            BlockPos attachedPos = frame.blockPosition().relative(frame.getDirection().getOpposite());
+            map.computeIfAbsent(attachedPos, k -> new java.util.ArrayList<>()).add(frame);
+        }
+
+        return map;
+    }
+
+    /**
+     * Single-chest convenience for the one caller outside the destination scan: builds a one-off
+     * frame lookup with the original per-chest inflate(1.0) query, then delegates to the shared matcher.
+     */
+    private FrameFilterResult getFrameFilterResult(ServerLevel level, BlockPos chestPos, ItemStack held) {
+
+        Map<BlockPos, java.util.List<ItemFrame>> map = new HashMap<>();
+
+        for (ItemFrame frame : level.getEntitiesOfClass(ItemFrame.class, new AABB(chestPos).inflate(1.0D))) {
+            BlockPos attachedPos = frame.blockPosition().relative(frame.getDirection().getOpposite());
+            map.computeIfAbsent(attachedPos, k -> new java.util.ArrayList<>()).add(frame);
+        }
+
+        return getFrameFilterResult(level, chestPos, held, map);
+    }
+
     private FrameFilterResult getFrameFilterResult(
             ServerLevel level,
             BlockPos chestPos,
-            ItemStack held
+            ItemStack held,
+            Map<BlockPos, java.util.List<ItemFrame>> framesByAttachedPos
     ) {
         boolean hasFrame = false;
         boolean hasBlankFrame = false;
 
-        AABB box = new AABB(chestPos).inflate(1.0D);
+        // A frame counts if it is attached to this chest itself, or to its genuine double-chest
+        // partner. Keying the pre-built map by attached position replaces the old any-same-type-
+        // neighbor check that let two side-by-side single chests cross-claim frames (the misfiling bug).
+        java.util.List<ItemFrame> frames = new java.util.ArrayList<>();
 
-        for (ItemFrame frame : level.getEntitiesOfClass(ItemFrame.class, box)) {
+        java.util.List<ItemFrame> direct = framesByAttachedPos.get(chestPos);
+        if (direct != null) {
+            frames.addAll(direct);
+        }
 
-            BlockPos attachedPos
-                    = frame.blockPosition().relative(frame.getDirection().getOpposite());
-
-            // The frame must be attached to this chest itself, or to its genuine double-chest
-            // partner. Previously any same-type neighbor counted, so two separate single chests
-            // placed side by side cross-claimed each other's frames: that was the misfiling bug.
-            if (!attachedPos.equals(chestPos) && !isDoubleChestPartner(level, chestPos, attachedPos)) {
-                continue;
+        BlockPos partner = doubleChestPartner(level, chestPos);
+        if (partner != null) {
+            java.util.List<ItemFrame> partnerFrames = framesByAttachedPos.get(partner);
+            if (partnerFrames != null) {
+                frames.addAll(partnerFrames);
             }
+        }
+
+        for (ItemFrame frame : frames) {
 
             ItemStack frameItem = frame.getItem();
 
@@ -1175,26 +1256,25 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
     }
 
     /**
-     * True only when {@code neighborPos} is the real other half of a double chest whose primary
-     * block is {@code chestPos}. Uses the vanilla chest pairing (type + connected direction) rather
-     * than "any same-type neighbor", which is what fixes the adjacent-chest misfiling bug.
+     * The real other half of a double chest whose primary block is {@code chestPos}, or {@code null}
+     * when {@code chestPos} is not a paired chest. Uses the vanilla chest pairing (type + connected
+     * direction) rather than "any same-type neighbor", which is what fixes the misfiling bug.
      */
-    private boolean isDoubleChestPartner(ServerLevel level, BlockPos chestPos, BlockPos neighborPos) {
+    private BlockPos doubleChestPartner(ServerLevel level, BlockPos chestPos) {
         BlockState state = level.getBlockState(chestPos);
 
         if (!(state.getBlock() instanceof ChestBlock)) {
-            return false;
+            return null;
         }
 
         net.minecraft.world.level.block.state.properties.ChestType chestType =
                 state.getValue(ChestBlock.TYPE);
 
         if (chestType == net.minecraft.world.level.block.state.properties.ChestType.SINGLE) {
-            return false;
+            return null;
         }
 
-        BlockPos partner = chestPos.relative(ChestBlock.getConnectedDirection(state));
-        return partner.equals(neighborPos);
+        return chestPos.relative(ChestBlock.getConnectedDirection(state));
     }
 
     /** Item-frame match test, honoring the configured match strictness. */
