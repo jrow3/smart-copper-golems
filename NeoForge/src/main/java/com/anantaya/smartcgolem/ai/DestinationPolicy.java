@@ -36,7 +36,8 @@ final class DestinationPolicy {
 
     /**
      * @param pos       the chosen chest, or {@code null} when nothing suitable was found.
-     * @param selection the flags to record, or {@code null} to leave the previous ones alone.
+     * @param selection the flags to record. Never null: every exit describes its own outcome, so the
+     *                  flags can never outlive the search that set them.
      */
     record Destination(BlockPos pos, Selection selection) {
     }
@@ -210,9 +211,12 @@ final class DestinationPolicy {
         // which puts the item back for real.
         GolemConfig.debugLog("[SMART-GOLEM NO-TARGET] No matching chest and no unfiltered fallback chest found for " + held);
 
-        // Null selection, not Selection(false, true): unlike every other exit above, this path never
-        // touched the selection flags, leaving whatever the previous search recorded. Preserved
-        // verbatim rather than normalized — see the note on this asymmetry in the project plan.
-        return new Destination(null, null);
+        // Reports "no framed match" like every other non-matching exit. This used to be the one exit
+        // that left the flags untouched, which meant a search finding nothing kept the PREVIOUS
+        // destination's framedMatch=true -- and that flag is the gate on the magic-deposit escape
+        // hatch. A golem that lost its target could then teleport its item into whatever chest it was
+        // walking to next, usually its own source chest. Clearing here is safe because a null result
+        // only ever reaches a caller that is leaving the current destination anyway.
+        return new Destination(null, new Selection(false, true));
     }
 }

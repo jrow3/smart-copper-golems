@@ -612,12 +612,9 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         DestinationPolicy.Destination destination = DestinationPolicy.findDestination(
                 level, mob, destinationBlockType, lastPickupChest, returnToSourceChest);
 
-        // A null selection means that search path deliberately left the flags alone.
-        if (destination.selection() != null) {
-            markDestinationSelection(
-                    destination.selection().framedMatch(),
-                    destination.selection().hadReachablePath());
-        }
+        markDestinationSelection(
+                destination.selection().framedMatch(),
+                destination.selection().hadReachablePath());
 
         return destination.pos();
     }
