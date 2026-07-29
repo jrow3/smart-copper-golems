@@ -42,9 +42,8 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
     private boolean currentDestinationIsFramedMatch = false;
     private boolean currentDestinationHadReachablePath = true;
-    private double closestDistanceToWalkTargetSqr = Double.MAX_VALUE;
+    private final StuckTracker stuckTracker = new StuckTracker();
 
-    private long stuckStartedAt = -1L;
 
     private final Predicate<BlockState> sourceBlockType;
     private final Predicate<BlockState> destinationBlockType;
@@ -725,13 +724,9 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
     }
 
     private void resetStuckTracking(PathfinderMob mob, long gameTime) {
-        this.stuckStartedAt = gameTime;
-
-        if (currentWalkTarget == null) {
-            this.closestDistanceToWalkTargetSqr = Double.MAX_VALUE;
-        } else {
-            this.closestDistanceToWalkTargetSqr = distanceToCurrentWalkTargetSqr(mob);
-        }
+        // The old null check collapsed away: distanceToWalkTargetSqr already returns MAX_VALUE for a
+        // null target, which is exactly what that branch assigned.
+        stuckTracker.reset(mob, currentWalkTarget, gameTime);
     }
 
     private boolean tryMagicDepositIfStuck(ServerLevel level, PathfinderMob mob, long gameTime) {
@@ -753,35 +748,15 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             return false;
         }
 
-        double currentDistance = distanceToCurrentWalkTargetSqr(mob);
-
-        if (closestDistanceToWalkTargetSqr == Double.MAX_VALUE) {
-            closestDistanceToWalkTargetSqr = currentDistance;
-            stuckStartedAt = gameTime;
-            return false;
-        }
-
-
-        if (currentDistance < closestDistanceToWalkTargetSqr - 0.25D) {
-            closestDistanceToWalkTargetSqr = currentDistance;
-            stuckStartedAt = gameTime;
-            return false;
-        }
-
-        if (stuckStartedAt < 0L) {
-            stuckStartedAt = gameTime;
-            return false;
-        }
-
-        if (gameTime - stuckStartedAt < MAGIC_DEPOSIT_STUCK_TICKS) {
+        if (!stuckTracker.isStuckFor(mob, currentWalkTarget, gameTime, MAGIC_DEPOSIT_STUCK_TICKS)) {
             return false;
         }
 
         GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-TRY] target=" + currentTarget
                 + " holding=" + mob.getMainHandItem()
                 + " reachableAtSearch=" + currentDestinationHadReachablePath
-                + " distanceSqr=" + currentDistance
-                + " bestDistanceSqr=" + closestDistanceToWalkTargetSqr);
+                + " distanceSqr=" + StuckTracker.distanceToWalkTargetSqr(mob, currentWalkTarget)
+                + " bestDistanceSqr=" + stuckTracker.closestDistanceSqr());
 
         return magicDepositIntoMatchedChest(level, mob, gameTime);
     }
@@ -935,18 +910,6 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         }
 
         return true;
-    }
-
-    private double distanceToCurrentWalkTargetSqr(PathfinderMob mob) {
-        if (currentWalkTarget == null) {
-            return Double.MAX_VALUE;
-        }
-
-        double dx = mob.getX() - (currentWalkTarget.getX() + 0.5D);
-        double dy = mob.getY() - currentWalkTarget.getY();
-        double dz = mob.getZ() - (currentWalkTarget.getZ() + 0.5D);
-
-        return dx * dx + dy * dy + dz * dz;
     }
 
     private void spawnMagicDepositParticles(ServerLevel level, PathfinderMob mob, BlockPos chestPos) {
