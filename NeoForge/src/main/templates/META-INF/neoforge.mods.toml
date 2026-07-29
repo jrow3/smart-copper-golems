@@ -22,13 +22,13 @@ version="${mod_version}" #mandatory
 # A display name for the mod
 displayName="${mod_name}" #mandatory
 
-issueTrackerURL="https://github.com/GameMech007-git/smart-copper-golems/issues"
+issueTrackerURL="https://github.com/jrow3/smart-copper-golems/issues"
 
 # A URL to query for updates for this mod. See the JSON update specification https://docs.neoforged.net/docs/misc/updatechecker/
 #updateJSONURL="https://change.me.example.invalid/updates.json" #optional
 
 # A URL for the "homepage" for this mod, displayed in the mod UI
-displayURL="https://modrinth.com/mod/smart-copper-golems" #optional
+displayURL="https://github.com/jrow3/smart-copper-golems" #optional
 
 # A file name (in the root of the mod JAR) containing a logo for display
 logoFile="icon.png"
@@ -37,7 +37,7 @@ logoFile="icon.png"
 #credits="" #optional
 
 # The authors of the mod, displayed in the mod UI (optional)
-authors="GameMech007!"
+authors="GameMech007! (original author), John Rowe (fork maintainer)"
 
 # The description text for the mod (multi line!) (#mandatory)
 description='''A mod to convert copper golem into smart copper golem!'''
