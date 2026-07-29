@@ -24,7 +24,6 @@ import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.core.particles.ParticleTypes;
 import org.jspecify.annotations.NonNull;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -74,7 +73,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
     private long nextSearchTick = 0;
 
     /** Items this golem just failed to route, and the tick each becomes eligible for pickup again. */
-    private final Map<Item, Long> unroutableUntilTick = new HashMap<>();
+    private final UnroutableItemTracker unroutableItems = new UnroutableItemTracker();
 
     private static final int ARRIVAL_DISTANCE_SQUARED = 4;
     private static final int SEARCH_COOLDOWN_TICKS = 20;
@@ -782,7 +781,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         for (int i = 0; i < chest.getContainerSize(); i++) {
             ItemStack stack = chest.getItem(i);
 
-            if (!stack.isEmpty() && !isOnUnroutableCooldown(stack.getItem(), level.getGameTime())) {
+            if (!stack.isEmpty() && !unroutableItems.isOnCooldown(stack.getItem(), level.getGameTime())) {
 
                 int takeAmount = Math.min(stack.getCount(), stack.getMaxStackSize());
                 ItemStack taken = stack.copyWithCount(takeAmount);
@@ -846,35 +845,11 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         ItemStack leftover = insertIntoChest(level, currentTarget, container, held);
 
         mob.setItemInHand(InteractionHand.MAIN_HAND, leftover);
-        markUnroutable(returned, gameTime);
+        unroutableItems.mark(returned, gameTime);
 
         GolemConfig.debugLog("[SMART-GOLEM RETURNED-ITEM] source=" + currentTarget
                 + " item=" + returned
                 + " leftover=" + leftover);
-    }
-
-    /** Stops the golem immediately re-grabbing a stack it just proved it cannot deliver. */
-    private void markUnroutable(Item item, long gameTime) {
-        int cooldown = GolemConfig.get().unroutableItemCooldownTicks;
-
-        if (cooldown > 0) {
-            unroutableUntilTick.put(item, gameTime + cooldown);
-        }
-    }
-
-    private boolean isOnUnroutableCooldown(Item item, long gameTime) {
-        Long until = unroutableUntilTick.get(item);
-
-        if (until == null) {
-            return false;
-        }
-
-        if (gameTime >= until) {
-            unroutableUntilTick.remove(item);
-            return false;
-        }
-
-        return true;
     }
 
     private ItemStack insertIntoChest(
@@ -1023,7 +998,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         for (int i = 0; i < chest.getContainerSize(); i++) {
             ItemStack stack = chest.getItem(i);
 
-            if (!stack.isEmpty() && !isOnUnroutableCooldown(stack.getItem(), gameTime)) {
+            if (!stack.isEmpty() && !unroutableItems.isOnCooldown(stack.getItem(), gameTime)) {
                 return true;
             }
         }
