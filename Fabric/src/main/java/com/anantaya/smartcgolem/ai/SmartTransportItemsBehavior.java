@@ -541,13 +541,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                         + " still holding=" + mob.getMainHandItem()
                         + " searching for another destination");
 
-                BlockPos alternateDestination = findDestinationChest(level, mob);
-
-                if (alternateDestination != null
-                        && !alternateDestination.equals(currentTarget)
-                        && !alternateDestination.equals(lastAbandonedDestination)) {
-                    lastAbandonedDestination = currentTarget;
-                    switchState(mob, TaskState.WALK_TO_DESTINATION, alternateDestination, gameTime);
+                if (tryRedirectToAlternateDestination(level, mob, currentTarget, gameTime)) {
                     return;
                 }
             }
@@ -626,6 +620,37 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         }
 
         return destination.pos();
+    }
+
+    /**
+     * Sends the golem to a different destination for the item it is still holding, giving up on
+     * {@code abandoned}.
+     *
+     * <p>Declines if the only candidate is the chest being abandoned, or one already abandoned
+     * earlier this haul — otherwise two mutually-rejecting chests ping-pong the golem forever.
+     *
+     * @return true if a new destination was taken. Callers differ on what to do when it was not, so
+     *         that decision stays with them.
+     */
+    private boolean tryRedirectToAlternateDestination(
+            ServerLevel level,
+            PathfinderMob mob,
+            BlockPos abandoned,
+            long gameTime
+    ) {
+
+        BlockPos alternateDestination = findDestinationChest(level, mob);
+
+        if (alternateDestination == null
+                || alternateDestination.equals(abandoned)
+                || alternateDestination.equals(lastAbandonedDestination)) {
+            return false;
+        }
+
+        lastAbandonedDestination = abandoned;
+        switchState(mob, TaskState.WALK_TO_DESTINATION, alternateDestination, gameTime);
+
+        return true;
     }
 
     private void closeOpenedContainer() {
@@ -797,14 +822,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             markDestinationSelection(false, true);
 
-            BlockPos alternateDestination = findDestinationChest(level, mob);
-
-            if (alternateDestination != null
-                    && !alternateDestination.equals(depositTarget)
-                    && !alternateDestination.equals(lastAbandonedDestination)) {
-                lastAbandonedDestination = depositTarget;
-                switchState(mob, TaskState.WALK_TO_DESTINATION, alternateDestination, gameTime);
-            } else {
+            if (!tryRedirectToAlternateDestination(level, mob, depositTarget, gameTime)) {
                 switchState(mob, TaskState.RETURN_TO_SOURCE, returnToSourceChest, gameTime);
             }
 
@@ -818,14 +836,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             markDestinationSelection(false, true);
 
-            BlockPos alternateDestination = findDestinationChest(level, mob);
-
-            if (alternateDestination != null
-                    && !alternateDestination.equals(depositTarget)
-                    && !alternateDestination.equals(lastAbandonedDestination)) {
-                lastAbandonedDestination = depositTarget;
-                switchState(mob, TaskState.WALK_TO_DESTINATION, alternateDestination, gameTime);
-            } else {
+            if (!tryRedirectToAlternateDestination(level, mob, depositTarget, gameTime)) {
                 switchState(mob, TaskState.RETURN_TO_SOURCE, returnToSourceChest, gameTime);
             }
 
@@ -879,17 +890,9 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         resetStuckTracking(mob, gameTime);
 
 
-        if (!mob.getMainHandItem().isEmpty()) {
-
-            BlockPos alternateDestination = findDestinationChest(level, mob);
-
-            if (alternateDestination != null
-                    && !alternateDestination.equals(depositTarget)
-                    && !alternateDestination.equals(lastAbandonedDestination)) {
-                lastAbandonedDestination = depositTarget;
-                switchState(mob, TaskState.WALK_TO_DESTINATION, alternateDestination, gameTime);
-                return true;
-            }
+        if (!mob.getMainHandItem().isEmpty()
+                && tryRedirectToAlternateDestination(level, mob, depositTarget, gameTime)) {
+            return true;
         }
 
         BlockPos sourceToReturn = returnToSourceChest != null
