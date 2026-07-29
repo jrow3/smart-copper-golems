@@ -14,7 +14,6 @@ import net.minecraft.world.entity.ai.behavior.Behavior;
 import net.minecraft.world.entity.ai.behavior.BehaviorUtils;
 import net.minecraft.world.entity.animal.golem.CopperGolem;
 import net.minecraft.world.entity.animal.golem.CopperGolemState;
-import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -23,7 +22,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.core.particles.ParticleTypes;
 import org.jspecify.annotations.NonNull;
 
-import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -608,161 +606,27 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         }
     }
 
+    // Thin binders over DestinationPolicy: they supply the mutable golem state the passes read, and
+    // apply the selection flags the destination search hands back.
+
     private BlockPos findSourceChest(ServerLevel level, PathfinderMob mob) {
-
-        for (BlockPos pos : ChestCandidateSource.collectCandidates(level, mob, sourceBlockType)) {
-
-            BlockEntity blockEntity = level.getBlockEntity(pos);
-
-            if (!(blockEntity instanceof ChestBlockEntity chest)) {
-                continue;
-            }
-
-            if (!ChestIo.hasAnyItem(chest, level.getGameTime(), unroutableItems)) {
-                continue;
-            }
-
-            double pathCost = getPathCost(mob, pos);
-
-            if (pathCost == Double.MAX_VALUE) {
-                continue;
-            }
-
-            return pos;
-        }
-
-        return null;
+        return DestinationPolicy.findSource(
+                level, mob, sourceBlockType, returnToSourceChest, unroutableItems);
     }
 
     private BlockPos findDestinationChest(ServerLevel level, PathfinderMob mob) {
 
-        ItemStack held = mob.getMainHandItem();
+        DestinationPolicy.Destination destination = DestinationPolicy.findDestination(
+                level, mob, destinationBlockType, lastPickupChest, returnToSourceChest);
 
-        if (held.isEmpty()) {
-            markDestinationSelection(false, true);
-            return null;
-
+        // A null selection means that search path deliberately left the flags alone.
+        if (destination.selection() != null) {
+            markDestinationSelection(
+                    destination.selection().framedMatch(),
+                    destination.selection().hadReachablePath());
         }
 
-        java.util.List<BlockPos> candidates = ChestCandidateSource.collectCandidates(level, mob, destinationBlockType);
-
-        // Query every item frame in the search volume once and bucket by the block each is attached
-        // to, rather than running getEntitiesOfClass per candidate across both passes below.
-        Map<BlockPos, java.util.List<ItemFrame>> framesByAttachedPos = FrameMatcher.collectFramesByAttachedPos(level, mob);
-
-        BlockPos unreachableMatch = null;
-
-        for (BlockPos pos : candidates) {
-
-            if (pos.equals(lastPickupChest)) {
-                continue;
-            }
-
-            BlockEntity blockEntity = level.getBlockEntity(pos);
-
-            if (!(blockEntity instanceof ChestBlockEntity chest)) {
-                continue;
-            }
-
-            Container targetContainer = ChestIo.getActualContainer(level, pos, chest);
-
-            if (ChestIo.isFullFor(targetContainer, held)) {
-                GolemConfig.debugLog("[SMART-GOLEM FULL-CHEST] Skipping matching chest because full: " + pos);
-                continue;
-            }
-
-            FrameMatcher.FrameFilterResult frameFilter = FrameMatcher.getFrameFilterResult(level, pos, held, framesByAttachedPos);
-
-            if (!frameFilter.hasFrame()) {
-                continue;
-            }
-
-            GolemConfig.debugLog("[SMART-GOLEM MATCH-CHECK] chest=" + pos
-                    + " matchedFrameItem=" + frameFilter.matchedFrameItem()
-                    + " holding=" + held
-                    + " matches=" + frameFilter.matchesHeld());
-
-            if (!frameFilter.matchesHeld()) {
-                continue;
-            }
-
-            double pathCost = getPathCost(mob, pos);
-
-            if (pathCost == Double.MAX_VALUE) {
-                // Remember it, but keep looking. Candidates are ordered by straight-line distance, so
-                // returning here let a walled-off chest a few blocks away permanently shadow a
-                // reachable one further out.
-                if (unreachableMatch == null) {
-                    unreachableMatch = pos;
-                    GolemConfig.debugLog("[SMART-GOLEM MATCHED-NO-PATH] Matched framed chest is unreachable, "
-                            + "continuing to look for a reachable one. chest=" + pos);
-                }
-                continue;
-            }
-
-            GolemConfig.debugLog("[SMART-GOLEM MATCHED-PATH] Matched framed chest is reachable. chest=" + pos);
-            markDestinationSelection(true, true);
-            return pos;
-        }
-
-        if (unreachableMatch != null) {
-            // Nothing reachable matched, so fall back to the walled-off chest and let the stuck
-            // timeout hand the item over.
-            GolemConfig.debugLog("[SMART-GOLEM MATCHED-NO-PATH-ONLY] No reachable match. Will allow magic "
-                    + "deposit after stuck timeout. chest=" + unreachableMatch);
-            markDestinationSelection(true, false);
-            return unreachableMatch;
-        }
-
-
-        GolemConfig.debugLog("[SMART-GOLEM FALLBACK-SEARCH] No matching framed chest for "
-                + held + ". Searching unfiltered destination chest.");
-
-        for (BlockPos pos : candidates) {
-
-            if (pos.equals(lastPickupChest)) {
-                continue;
-            }
-
-            BlockEntity blockEntity = level.getBlockEntity(pos);
-
-            if (!(blockEntity instanceof ChestBlockEntity chest)) {
-                continue;
-            }
-
-            FrameMatcher.FrameFilterResult frameFilter = FrameMatcher.getFrameFilterResult(level, pos, held, framesByAttachedPos);
-
-            if (!FrameMatcher.isFallbackEligible(frameFilter, GolemConfig.get().fallbackMode)) {
-                GolemConfig.debugLog("[SMART-GOLEM FALLBACK-SKIP] Chest not eligible for fallback: " + pos);
-                continue;
-            }
-
-            Container targetContainer = ChestIo.getActualContainer(level, pos, chest);
-
-            if (ChestIo.isFullFor(targetContainer, held)) {
-                GolemConfig.debugLog("[SMART-GOLEM FULL-CHEST] Skipping fallback chest because full: " + pos);
-                continue;
-            }
-
-            double pathCost = getPathCost(mob, pos);
-
-            if (pathCost == Double.MAX_VALUE) {
-                continue;
-            }
-
-            GolemConfig.debugLog("[SMART-GOLEM FALLBACK-DEPOSIT] Selected unfiltered chest=" + pos);
-            markDestinationSelection(false, true);
-            return pos;
-        }
-
-        // A third pass used to live here, meant to deposit back into the source chest as a last
-        // resort. It could never run: it required the candidate to equal lastPickupChest, but
-        // candidates come from the destination predicate (vanilla chests) while lastPickupChest is
-        // always a copper chest. Returning null now routes the golem through RETURN_TO_SOURCE,
-        // which puts the item back for real.
-        GolemConfig.debugLog("[SMART-GOLEM NO-TARGET] No matching chest and no unfiltered fallback chest found for " + held);
-
-        return null;
+        return destination.pos();
     }
 
     private void closeOpenedContainer() {
