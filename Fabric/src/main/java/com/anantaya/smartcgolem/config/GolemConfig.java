@@ -139,8 +139,13 @@ public final class GolemConfig {
         }
     }
 
-    /** Clamps values into safe ranges and repairs nulls left by malformed JSON. */
-    private void clamp() {
+    /**
+     * Clamps values into safe ranges and repairs nulls left by malformed JSON.
+     *
+     * <p>Package-private rather than private so the tests can drive it on a plain instance. Going
+     * through {@link #load()} instead would mean touching the real config file.
+     */
+    void clamp() {
         horizontalSearchDistance = Math.max(1, Math.min(64, horizontalSearchDistance));
         verticalSearchDistance = Math.max(1, Math.min(64, verticalSearchDistance));
 
