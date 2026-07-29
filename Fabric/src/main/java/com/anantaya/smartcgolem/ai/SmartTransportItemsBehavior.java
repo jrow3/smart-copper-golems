@@ -20,7 +20,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.core.particles.ParticleTypes;
 import org.jspecify.annotations.NonNull;
 
@@ -240,7 +239,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                     return;
                 }
 
-                if (isChestAvailable(mob, currentTarget, gameTime) && !isChestBusy(chest)) {
+                if (isChestAvailable(mob, currentTarget, gameTime) && !ChestIo.isChestBusy(chest)) {
                     switchState(mob, TaskState.INTERACT_SOURCE, currentTarget, gameTime);
                 }
             }
@@ -274,7 +273,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                     return;
                 }
 
-                if (isChestAvailable(mob, currentTarget, gameTime) && !isChestBusy(chest)) {
+                if (isChestAvailable(mob, currentTarget, gameTime) && !ChestIo.isChestBusy(chest)) {
                     switchState(mob, TaskState.INTERACT_DESTINATION, currentTarget, gameTime);
                 }
             }
@@ -395,7 +394,15 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             boolean movedItem = false;
 
             if (mob.getMainHandItem().isEmpty()) {
-                movedItem = pickupFromChest(level, mob, chest);
+
+                movedItem = ChestIo.pickupFromChest(level, mob, chest, currentTarget, unroutableItems);
+
+                // ChestIo does the inventory move; remembering where it came from is task state, so
+                // it stays here. Only set on a successful pickup, as before.
+                if (movedItem) {
+                    lastPickupChest = currentTarget;
+                    returnToSourceChest = currentTarget;
+                }
             }
 
             if (mob instanceof CopperGolem copperGolem) {
@@ -498,10 +505,10 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 GolemConfig.debugLog("[SMART-GOLEM DEPOSIT START] chest=" + currentTarget
                         + " held=" + heldBefore);
 
-                Container targetContainer = getActualContainer(level, currentTarget, chest);
+                Container targetContainer = ChestIo.getActualContainer(level, currentTarget, chest);
 
                 ItemStack remaining =
-                        insertIntoChest(level, currentTarget, targetContainer, heldBefore);
+                        ChestIo.insertIntoChest(level, currentTarget, targetContainer, heldBefore);
 
                 mob.setItemInHand(InteractionHand.MAIN_HAND, remaining);
 
@@ -611,7 +618,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 continue;
             }
 
-            if (!hasAnyItem(chest, level.getGameTime())) {
+            if (!ChestIo.hasAnyItem(chest, level.getGameTime(), unroutableItems)) {
                 continue;
             }
 
@@ -657,9 +664,9 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 continue;
             }
 
-            Container targetContainer = getActualContainer(level, pos, chest);
+            Container targetContainer = ChestIo.getActualContainer(level, pos, chest);
 
-            if (isFullFor(targetContainer, held)) {
+            if (ChestIo.isFullFor(targetContainer, held)) {
                 GolemConfig.debugLog("[SMART-GOLEM FULL-CHEST] Skipping matching chest because full: " + pos);
                 continue;
             }
@@ -730,9 +737,9 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
                 continue;
             }
 
-            Container targetContainer = getActualContainer(level, pos, chest);
+            Container targetContainer = ChestIo.getActualContainer(level, pos, chest);
 
-            if (isFullFor(targetContainer, held)) {
+            if (ChestIo.isFullFor(targetContainer, held)) {
                 GolemConfig.debugLog("[SMART-GOLEM FULL-CHEST] Skipping fallback chest because full: " + pos);
                 continue;
             }
@@ -776,47 +783,6 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         openedCopperGolem = null;
     }
 
-    private boolean pickupFromChest(ServerLevel level, PathfinderMob mob, ChestBlockEntity chest) {
-
-        for (int i = 0; i < chest.getContainerSize(); i++) {
-            ItemStack stack = chest.getItem(i);
-
-            if (!stack.isEmpty() && !unroutableItems.isOnCooldown(stack.getItem(), level.getGameTime())) {
-
-                int takeAmount = Math.min(stack.getCount(), stack.getMaxStackSize());
-                ItemStack taken = stack.copyWithCount(takeAmount);
-
-                GolemConfig.debugLog("[SMART-GOLEM PICKUP BEFORE] tick=" + level.getGameTime()
-                        + " chest=" + currentTarget
-                        + " slot=" + i
-                        + " stack=" + stack
-                        + " mobHand=" + mob.getMainHandItem());
-
-                stack.shrink(takeAmount);
-
-                chest.setChanged();
-                level.blockEntityChanged(currentTarget);
-
-                mob.setItemInHand(InteractionHand.MAIN_HAND, taken);
-
-                lastPickupChest = currentTarget;
-                returnToSourceChest = currentTarget;
-
-                GolemConfig.debugLog("[SMART-GOLEM RETURN-SOURCE-SAVED] source=" + returnToSourceChest);
-
-                GolemConfig.debugLog("[SMART-GOLEM PICKUP AFTER] tick=" + level.getGameTime()
-                        + " chest=" + currentTarget
-                        + " slot=" + i
-                        + " remainingStack=" + chest.getItem(i)
-                        + " mobHand=" + mob.getMainHandItem());
-
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /**
      * Puts an item the golem could not route back where it came from.
      *
@@ -841,8 +807,8 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         }
 
         Item returned = held.getItem();
-        Container container = getActualContainer(level, currentTarget, chest);
-        ItemStack leftover = insertIntoChest(level, currentTarget, container, held);
+        Container container = ChestIo.getActualContainer(level, currentTarget, chest);
+        ItemStack leftover = ChestIo.insertIntoChest(level, currentTarget, container, held);
 
         mob.setItemInHand(InteractionHand.MAIN_HAND, leftover);
         unroutableItems.mark(returned, gameTime);
@@ -850,160 +816,6 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         GolemConfig.debugLog("[SMART-GOLEM RETURNED-ITEM] source=" + currentTarget
                 + " item=" + returned
                 + " leftover=" + leftover);
-    }
-
-    private ItemStack insertIntoChest(
-            ServerLevel level,
-            BlockPos chestPos,
-            Container chest,
-            ItemStack held
-    ) {
-
-        ItemStack remaining = held.copy();
-
-        for (int i = 0; i < chest.getContainerSize(); i++) {
-
-            if (remaining.isEmpty()) {
-                return ItemStack.EMPTY;
-            }
-
-            ItemStack slot = chest.getItem(i);
-
-            if (slot.isEmpty()) {
-                continue;
-            }
-
-            if (!ItemStack.isSameItemSameComponents(slot, remaining)) {
-                continue;
-            }
-
-            if (slot.getCount() >= slot.getMaxStackSize()) {
-                continue;
-            }
-
-            int moveAmount = Math.min(
-                    remaining.getCount(),
-                    slot.getMaxStackSize() - slot.getCount()
-            );
-
-            GolemConfig.debugLog("[SMART-GOLEM STACK-DEPOSIT BEFORE] chest=" + chestPos
-                    + " slot=" + i
-                    + " slotBefore=" + slot
-                    + " remaining=" + remaining
-                    + " moveAmount=" + moveAmount);
-
-            slot.grow(moveAmount);
-            remaining.shrink(moveAmount);
-
-            chest.setChanged();
-            level.blockEntityChanged(chestPos);
-
-            GolemConfig.debugLog("[SMART-GOLEM STACK-DEPOSIT AFTER] chest=" + chestPos
-                    + " slot=" + i
-                    + " slotAfter=" + chest.getItem(i)
-                    + " remaining=" + remaining);
-        }
-
-        for (int i = 0; i < chest.getContainerSize(); i++) {
-
-            if (remaining.isEmpty()) {
-                return ItemStack.EMPTY;
-            }
-
-            ItemStack slot = chest.getItem(i);
-
-            if (!slot.isEmpty()) {
-                continue;
-            }
-
-            GolemConfig.debugLog("[SMART-GOLEM EMPTY-DEPOSIT BEFORE] chest=" + chestPos
-                    + " slot=" + i
-                    + " remaining=" + remaining);
-
-            chest.setItem(i, remaining.copy());
-
-            chest.setChanged();
-            level.blockEntityChanged(chestPos);
-
-            GolemConfig.debugLog("[SMART-GOLEM EMPTY-DEPOSIT AFTER] chest=" + chestPos
-                    + " slot=" + i
-                    + " slotAfter=" + chest.getItem(i));
-
-            return ItemStack.EMPTY;
-        }
-
-        return remaining;
-    }
-
-    private boolean isChestBusy(ChestBlockEntity chest) {
-        return !chest.getEntitiesWithContainerOpen().isEmpty();
-    }
-
-    private Container getActualContainer(
-            ServerLevel level,
-            BlockPos pos,
-            ChestBlockEntity chest
-    ) {
-
-        Container targetContainer = chest;
-
-        if (level.getBlockState(pos).getBlock() instanceof ChestBlock chestBlock) {
-
-            Container combined = ChestBlock.getContainer(
-                    chestBlock,
-                    level.getBlockState(pos),
-                    level,
-                    pos,
-                    true
-            );
-
-            if (combined != null) {
-                targetContainer = combined;
-            }
-        }
-
-        return targetContainer;
-    }
-
-    /**
-     * Whether the chest has nowhere to put the item: no empty slot, and no matching stack with room
-     * left. Named for what it returns; it was previously called hasSpaceFor, which meant the exact
-     * opposite of its result.
-     */
-    private boolean isFullFor(Container chest, ItemStack item) {
-
-        for (int i = 0; i < chest.getContainerSize(); i++) {
-            ItemStack slot = chest.getItem(i);
-
-            if (slot.isEmpty()) {
-                return false;
-            }
-
-            if (ItemStack.isSameItemSameComponents(slot, item)
-                    && slot.getCount() < slot.getMaxStackSize()) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
-     * Whether the chest holds anything this golem would actually pick up right now. Items on the
-     * unroutable cooldown do not count, otherwise the golem keeps walking to a chest it is going to
-     * refuse to take from.
-     */
-    private boolean hasAnyItem(ChestBlockEntity chest, long gameTime) {
-
-        for (int i = 0; i < chest.getContainerSize(); i++) {
-            ItemStack stack = chest.getItem(i);
-
-            if (!stack.isEmpty() && !unroutableItems.isOnCooldown(stack.getItem(), gameTime)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     @Override
@@ -1123,7 +935,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             return true;
         }
 
-        if (isChestBusy(chest)) {
+        if (ChestIo.isChestBusy(chest)) {
             GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-WAIT] Chest busy: " + depositTarget);
             resetStuckTracking(mob, gameTime);
             return false;
@@ -1160,9 +972,9 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
             return true;
         }
 
-        Container targetContainer = getActualContainer(level, depositTarget, chest);
+        Container targetContainer = ChestIo.getActualContainer(level, depositTarget, chest);
 
-        if (isFullFor(targetContainer, heldBefore)) {
+        if (ChestIo.isFullFor(targetContainer, heldBefore)) {
             GolemConfig.debugLog("[SMART-GOLEM MAGIC-DEPOSIT-CANCEL] Matched chest full: " + depositTarget);
 
             markDestinationSelection(false, true);
@@ -1192,7 +1004,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         ItemStack remaining;
 
         try {
-            remaining = insertIntoChest(level, depositTarget, targetContainer, heldBefore);
+            remaining = ChestIo.insertIntoChest(level, depositTarget, targetContainer, heldBefore);
         } finally {
             releaseChest(mob);
         }
