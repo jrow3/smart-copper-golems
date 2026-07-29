@@ -67,6 +67,9 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
     private BlockPos lastPickupChest = null;
     private BlockPos returnToSourceChest = null;
     private BlockPos lockedChest = null;
+    // Anti-oscillation: the destination we just gave up on this haul. Prevents two
+    // mutually-rejecting chests from ping-ponging the golem forever. Cleared on new pickup.
+    private BlockPos lastAbandonedDestination = null;
 
     private Container openedContainer = null;
     private CopperGolem openedCopperGolem = null;
@@ -117,6 +120,7 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
         if (!carrying) {
             lastPickupChest = null;
             returnToSourceChest = null;
+            lastAbandonedDestination = null;
         }
 
         GolemConfig.debugLog("[SMART-GOLEM START] carrying=" + carrying
@@ -602,7 +606,10 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
                 BlockPos alternateDestination = findDestinationChest(level, mob);
 
-                if (alternateDestination != null && !alternateDestination.equals(currentTarget)) {
+                if (alternateDestination != null
+                        && !alternateDestination.equals(currentTarget)
+                        && !alternateDestination.equals(lastAbandonedDestination)) {
+                    lastAbandonedDestination = currentTarget;
                     switchState(mob, TaskState.WALK_TO_DESTINATION, alternateDestination, gameTime);
                     return;
                 }
@@ -1436,7 +1443,10 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             BlockPos alternateDestination = findDestinationChest(level, mob);
 
-            if (alternateDestination != null && !alternateDestination.equals(depositTarget)) {
+            if (alternateDestination != null
+                    && !alternateDestination.equals(depositTarget)
+                    && !alternateDestination.equals(lastAbandonedDestination)) {
+                lastAbandonedDestination = depositTarget;
                 switchState(mob, TaskState.WALK_TO_DESTINATION, alternateDestination, gameTime);
             } else {
                 switchState(mob, TaskState.RETURN_TO_SOURCE, returnToSourceChest, gameTime);
@@ -1454,7 +1464,10 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             BlockPos alternateDestination = findDestinationChest(level, mob);
 
-            if (alternateDestination != null && !alternateDestination.equals(depositTarget)) {
+            if (alternateDestination != null
+                    && !alternateDestination.equals(depositTarget)
+                    && !alternateDestination.equals(lastAbandonedDestination)) {
+                lastAbandonedDestination = depositTarget;
                 switchState(mob, TaskState.WALK_TO_DESTINATION, alternateDestination, gameTime);
             } else {
                 switchState(mob, TaskState.RETURN_TO_SOURCE, returnToSourceChest, gameTime);
@@ -1514,7 +1527,10 @@ public class SmartTransportItemsBehavior extends Behavior<PathfinderMob> {
 
             BlockPos alternateDestination = findDestinationChest(level, mob);
 
-            if (alternateDestination != null && !alternateDestination.equals(depositTarget)) {
+            if (alternateDestination != null
+                    && !alternateDestination.equals(depositTarget)
+                    && !alternateDestination.equals(lastAbandonedDestination)) {
+                lastAbandonedDestination = depositTarget;
                 switchState(mob, TaskState.WALK_TO_DESTINATION, alternateDestination, gameTime);
                 return true;
             }
