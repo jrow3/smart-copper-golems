@@ -58,7 +58,7 @@ java {
 
 	// Pinned so a local JDK and CI cannot compile against different toolchains.
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(25)
+		languageVersion = JavaLanguageVersion.of(26)
 	}
 }
 
